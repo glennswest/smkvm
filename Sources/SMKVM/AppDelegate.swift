@@ -1,36 +1,53 @@
 import AppKit
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var connect: ConnectWindowController?
+    private var hostsWindow: HostsWindowController?
     private var consoles: [ConsoleWindowController] = []
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.mainMenu = makeMenu()
-        showConnect(nil)
+        showHosts(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
 
-    @objc func showConnect(_ sender: Any?) {
-        if connect == nil {
-            connect = ConnectWindowController { [weak self] host, user, password in
-                self?.open(host: host, user: user, password: password)
-            }
-        }
-        connect?.showWindow(nil)
-        connect?.window?.makeKeyAndOrderFront(nil)
+    func applicationShouldHandleReopen(_ app: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows { showHosts(nil) }
+        return true
     }
 
-    private func open(host: String, user: String, password: String) {
-        let c = ConsoleWindowController(host: host, user: user, password: password)
+    @objc func showHosts(_ sender: Any?) {
+        if hostsWindow == nil {
+            hostsWindow = HostsWindowController { [weak self] host in self?.open(host) }
+        }
+        hostsWindow?.showWindow(nil)
+    }
+
+    @objc func addHost(_ sender: Any?) {
+        showHosts(nil)
+        hostsWindow?.addHost()
+    }
+
+    /// Opens a console for `host`, or brings its existing console forward.
+    private func open(_ host: Host) {
+        if let existing = consoles.first(where: { $0.host.id == host.id }) {
+            existing.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        let password = Keychain.password(host: host.address, user: host.user) ?? ""
+        let c = ConsoleWindowController(host: host, password: password)
         c.onClose = { [weak self, weak c] in
             self?.consoles.removeAll { $0 === c }
+        }
+        // New consoles join the frontmost console's tab group.
+        if let front = consoles.last?.window, let w = c.window {
+            front.addTabbedWindow(w, ordered: .above)
         }
         consoles.append(c)
         c.showWindow(nil)
         c.start()
-        connect?.close()
     }
 
     @objc func sendCtrlAltDel(_ sender: Any?) {
@@ -53,7 +70,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let fileItem = NSMenuItem()
         let fileMenu = NSMenu(title: "Connection")
-        fileMenu.addItem(withTitle: "New Connection…", action: #selector(showConnect(_:)),
+        fileMenu.addItem(withTitle: "Hosts", action: #selector(showHosts(_:)),
+                         keyEquivalent: "0")
+        fileMenu.addItem(withTitle: "Add Host…", action: #selector(addHost(_:)),
                          keyEquivalent: "n")
         fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)),
                          keyEquivalent: "w")
@@ -66,6 +85,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          keyEquivalent: "")
         keysItem.submenu = keysMenu
         main.addItem(keysItem)
+
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)),
+                           keyEquivalent: "m")
+        windowItem.submenu = windowMenu
+        main.addItem(windowItem)
+        NSApp.windowsMenu = windowMenu
 
         return main
     }

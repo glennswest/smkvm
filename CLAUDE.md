@@ -26,7 +26,10 @@ Single source: `VERSION` (also stamped into the app's Info.plist by
 
 - `Sources/SMKVMCore` — protocol: BMC HTTP login/session key, RFB/ATEN
   handshake, message parsing, video decoders, key mapping. No UI.
-- `Sources/SMKVM` — AppKit app: connect window, console window/view, Keychain.
+- `Sources/SMKVM` — AppKit app: host library (HostStore/HostsWindow/HostEditor),
+  tabbed console windows (ConsoleWindowController/ConsoleView), Keychain.
+- `KVMClient` is currently a stub with the final interface; the protocol
+  implementation replaces its bodies.
 - `Tests/SMKVMCoreTests` — decoder and parser tests.
 - `docs/protocol.md` — the ATEN protocol as implemented here.
 
@@ -43,5 +46,6 @@ security type 16.
 - [ ] RFB/ATEN handshake
 - [ ] Video decoder(s) for the chip on server1
 - [ ] Console view, keyboard + mouse input
-- [ ] Connect window + Keychain
+- [x] Host library (multi-host), Keychain, tabbed consoles
+- [x] Console view + input capture (UI side)
 - [ ] App bundle script

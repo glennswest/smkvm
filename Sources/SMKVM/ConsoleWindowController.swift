@@ -5,18 +5,20 @@ import SMKVMCore
 final class ConsoleWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
 
-    private let host: String
+    let host: Host
     private let client: KVMClient
     private let view = ConsoleView(frame: NSRect(x: 0, y: 0, width: 1024, height: 768))
     private var sized = false
 
-    init(host: String, user: String, password: String) {
+    init(host: Host, password: String) {
         self.host = host
-        self.client = KVMClient(host: host, user: user, password: password)
+        self.client = KVMClient(host: host.address, user: host.user, password: password)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1024, height: 768),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
                          backing: .buffered, defer: false)
-        w.title = "\(host) — connecting…"
+        w.title = "\(host.title) — connecting…"
+        w.tabbingMode = .preferred
+        w.tabbingIdentifier = "console"
         w.contentView = view
         w.contentMinSize = NSSize(width: 320, height: 240)
         super.init(window: w)
@@ -33,7 +35,7 @@ final class ConsoleWindowController: NSWindowController, NSWindowDelegate {
         client.onFrame = { [weak self] fb in self?.frame(fb) }
         client.onStatus = { [weak self] s in
             guard let self else { return }
-            self.window?.title = "\(self.host) — \(s)"
+            self.window?.title = "\(self.host.title) — \(s)"
         }
     }
 
