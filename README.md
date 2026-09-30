@@ -150,5 +150,5 @@ MIT — see [`LICENSE`](LICENSE).
 
 ## Status
 
-Version 0.1.0 — early, but in daily use on the hardware above. See
+Version 1.0.0 — in daily use on the hardware above. See
 [`CHANGELOG.md`](CHANGELOG.md).

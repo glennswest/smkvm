@@ -30,7 +30,7 @@ identity (or `SMKVM_SIGN_IDENTITY`), falling back to ad-hoc.
 ## Version
 
 Single source: `VERSION` (also stamped into the app's Info.plist by
-`scripts/bundle.sh`). Current: 0.1.0.
+`scripts/bundle.sh`). Current: 1.0.0.
 
 ## Layout
 
