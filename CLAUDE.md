@@ -17,6 +17,15 @@ swift test
 scripts/bundle.sh      # release build → build/SMKVM.app
 ```
 
+## Signing and the Keychain
+
+`scripts/bundle.sh` signs with the first Apple Development / Developer ID
+identity (or `SMKVM_SIGN_IDENTITY`). Keep it that way: an ad-hoc signature
+changes every build, so every Keychain item re-prompts for the login
+password after each rebuild. Items created outside the app (e.g. with
+`security add-generic-password`) need `-T build/SMKVM.app` or the app will
+prompt once per item.
+
 ## Version
 
 Single source: `VERSION` (also stamped into the app's Info.plist by

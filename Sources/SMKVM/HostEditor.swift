@@ -2,6 +2,9 @@ import AppKit
 
 /// Sheet for adding or editing a host.
 final class HostEditor: NSWindowController {
+    /// Credentials from the last Add/Save this run, offered for the next new host.
+    nonisolated(unsafe) static var lastSaved: (user: String, password: String)?
+
     private let nameField = NSTextField()
     private let addressField = NSTextField()
     private let userField = NSTextField()
@@ -26,7 +29,13 @@ final class HostEditor: NSWindowController {
         nameField.stringValue = host.name
         addressField.stringValue = host.address
         userField.stringValue = host.user
-        if !isNew { passField.stringValue = Keychain.password(host: host.address, user: host.user) ?? "" }
+        if !isNew {
+            passField.stringValue = Keychain.password(host: host.address, user: host.user) ?? ""
+        } else if let last = HostEditor.lastSaved {
+            // BMCs in one rack usually share credentials; start from the last ones.
+            userField.stringValue = last.user
+            passField.stringValue = last.password
+        }
 
         let save = NSButton(title: isNew ? "Add" : "Save", target: self, action: #selector(ok))
         save.keyEquivalent = "\r"
@@ -62,6 +71,7 @@ final class HostEditor: NSWindowController {
         host.address = address
         host.user = user
         Keychain.save(host: address, user: user, password: passField.stringValue)
+        HostEditor.lastSaved = (user, passField.stringValue)
         finish(host)
     }
 

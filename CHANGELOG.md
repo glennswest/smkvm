@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### 2026-09-30
+- **fix:** No more Keychain password prompt per server: the app is signed with a stable identity (Apple Development, via `scripts/bundle.sh`, override `SMKVM_SIGN_IDENTITY`) so access grants survive rebuilds, and passwords are updated in place instead of delete-and-re-add (which reset the access list).
+- **feat:** Adding a host pre-fills the user and password from the last host saved.
 - **feat:** Screen log — per-host **Console → Log Screen on Clear** (⌘L) saves a PNG of the last screen with content whenever it is cleared (cls), the video mode changes, the signal drops or the session ends; identical screens are saved once. Files go to `~/Pictures/SMKVM/<host>/<date>/HHmmss.SSS-<reason>.png`; **Show Screen Log in Finder** (⇧⌘L). The window title counts screens logged.
 - **fix:** App menu shortcuts work while the console has focus (other Cmd-combos still go to the host).
 - **feat:** `--connect <host>` launch argument opens a saved host's console.

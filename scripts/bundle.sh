@@ -30,5 +30,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-codesign --force --sign - "$APP"
+# Sign with a stable identity so Keychain "Always Allow" survives rebuilds
+# (an ad-hoc signature changes every build, and macOS asks again).
+# Override with SMKVM_SIGN_IDENTITY; falls back to ad-hoc if none exists.
+IDENTITY=${SMKVM_SIGN_IDENTITY:-$(security find-identity -v -p codesigning \
+    | awk -F'"' '/Apple Development|Developer ID Application/ {print $2; exit}')}
+if [ -n "$IDENTITY" ]; then
+    codesign --force --sign "$IDENTITY" "$APP"
+else
+    echo "warning: no signing identity; ad-hoc signing (Keychain will re-prompt after each build)" >&2
+    codesign --force --sign - "$APP"
+fi
 echo "built $APP ($VERSION)"

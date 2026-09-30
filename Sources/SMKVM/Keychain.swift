@@ -20,16 +20,22 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Updates the item in place when it exists (keeping its access list, so
+    /// no new prompt), otherwise creates it — owned by this app, which can
+    /// then read it without asking.
     static func save(host: String, user: String, password: String) {
-        let account = "\(user)@\(host)"
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: "\(user)@\(host)",
         ]
-        SecItemDelete(base as CFDictionary)
-        var add = base
-        add[kSecValueData as String] = Data(password.utf8)
-        SecItemAdd(add as CFDictionary, nil)
+        let data = Data(password.utf8)
+        let status = SecItemUpdate(base as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var add = base
+            add[kSecValueData as String] = data
+            add[kSecAttrLabel as String] = "SMKVM — \(user)@\(host)"
+            SecItemAdd(add as CFDictionary, nil)
+        }
     }
 }
