@@ -43,10 +43,13 @@ Single source: `VERSION` (also stamped into the app's Info.plist by
 - `Tests/SMKVMCoreTests` — decoder and parser tests.
 - `docs/protocol.md` — the ATEN protocol as implemented here.
 
-## Test target
+## Test lab
 
-server1 BMC: 192.168.11.10 — ATEN firmware (c) 2010, RFB 003.008 on 5900,
-security type 16.
+Verified against 8 × Supermicro X9 boards (WPCM450 BMC, ATEN firmware
+"(c) 2010", RFB 003.008 on 5900, security type 16) and 1 × Dell PowerEdge
+R230 (iDRAC8 2.86, Enterprise, built-in VNC server on 5901). Lab addresses,
+credentials and the API-token distribution are kept outside this repo (the
+repo is public) — never commit them.
 
 ## Work plan
 
@@ -54,53 +57,33 @@ security type 16.
 - [x] Protocol spec (docs/protocol.md)
 - [x] BMC HTTP login + session-key fetch
 - [x] RFB/ATEN handshake
-- [x] Hermon decoder (0x59/0x00, WPCM450 — server1)
+- [x] Hermon decoder (0x59/0x00, WPCM450) — live-verified (POST, BIOS setup, EFI shell, Linux console)
 - [x] AST2100 decoder (0x57 — X10 boards; synthetic tests only)
 - [x] `smkvm-probe` CLI: login → handshake → first frame → PNG (live test tool)
-- [x] HID key mapping, ATEN key/pointer messages, keep-alive, reconnect
+- [x] HID key mapping, ATEN key/pointer messages, keep-alive, reconnect — keyboard live-verified
 - [x] Host library (multi-host), password file, tabbed consoles
 - [x] Console view + input capture (UI side)
 - [x] App bundle script
+- [x] **Screen log**: per-host "Log Screen on Clear" — saves the settled
+  screen on cls, screen replacement (not scroll/growth), mode change,
+  no-signal and disconnect; dedup; ~/Pictures/SMKVM/<host>/<date>/.
+  ScreenLogger is fed from the session thread (every update, not the
+  coalesced UI frames).
+- [x] **Dell iDRAC support** via the iDRAC's built-in VNC server (Dell's own
+  5900 console is proprietary/encrypted): standard RFB client (VNC auth,
+  Raw/CopyRect/Hextile, X11 keysyms), per-host console type. Live-verified:
+  auth, video, key input. Power via Redfish not exercised live.
+- [x] **Web API**: token-authenticated HTTP server in the app on all
+  interfaces, port 8765; **no power endpoint** (owner decision). BSD sockets
+  — an NWListener version took ~2 s per 15 KB to remote clients; don't go
+  back. Live-verified from a remote host: screen.png ~30 ms, MJPEG ~8 fps,
+  401 without token, 409 on a closed console.
 
 ## Next
 
-- [x] **Web API**: HTTP server in the app on all interfaces (owner: must be
-  reachable from stormcentral, 192.168.8.170), token auth, **no power
-  endpoint** (owner decision) (8765, `HTTPServer` in core on NWListener, `APIController` in
-  the app routing to console windows on the main actor). Endpoints: hosts +
-  status, screen.png (with wait-for-change), type text, keys/chords, mouse,
-  power, connect/disconnect, screen-log listing; small HTML page at `/`.
-  Purpose: let Claude drive and watch consoles (input + output).
-  Live-verified from stormcentral 2026-09-30: server1 screen.png 30 ms,
-  MJPEG ~8 fps, 401 without token, 409 on closed console. Server is BSD
-  sockets (NWListener was ~2 s/15 KB to remote clients — don't go back).
-- [x] API token distributed as `SMKVM_API` in `~/.env`: stormcentral
-  `/home/stormcentral/.env` (0600, the account Claude runs as) and the
-  owner's `~/.env` on the Mac. If the token is regenerated, update both.
-
-- [x] **Dell iDRAC support**: PowerEdge R230, iDRAC8 fw 2.86,
-  Enterprise licence, 192.168.11.151. Dell's own console (5900) is
-  proprietary/encrypted; use the iDRAC's built-in **VNC server** instead
-  (`racadm set iDRAC.VNCServer.Enable 1`, port 5901, VNC password ≤ 8 chars,
-  SSL off). Add a standard RFB client (VNC auth, Raw/CopyRect/Hextile,
-  X11 keysyms) and a per-host device type (Supermicro ATEN | VNC).
-  Done: r230 (192.168.11.151) configured — VNC enabled, password = login
-  password, Timeout 10800. Live-verified: auth, Hextile video (Linux
-  console), key input (Shift tap woke the console). Power via Redfish not
-  yet exercised live.
-
-- [x] **Screen log**: per-host "Log Screen on Clear" — save the
-  last content frame as PNG on cls (screen goes uniform), mode change,
-  no-signal and disconnect; dedup; ~/Pictures/SMKVM/<host>/<date>/.
-  Core: ScreenLogger fed from the session thread (every update, not the
-  coalesced UI frames). UI: Console menu toggle + open folder.
-
-- [x] Live handshake on server1–8.g11.lo (X9 WPCM450) — login, JNLP,
-  auth, ServerInit, keep-alive all verified; see protocol.md "Live results".
-- [ ] **Live video/input test** — all eight hosts were powered off; needs a
-  powered-on host (owner to power one on). Then settle:
-  0x37 length (2 vs 3, `--mouse-info-len`), 0x15 keep-alive acceptance
-  (`--no-keepalive`), JNLP argument layout, wheel encoding (buttons bits 3/4).
+- [ ] Settle remaining UNVERIFIED protocol items (docs/protocol.md): 0x37
+  length (2 vs 3, `--mouse-info-len`), wheel encoding (buttons bits 3/4),
+  mouse on ATEN.
 - [ ] AST2100 live test on an X10 board.
 - [ ] KVM-over-TLS (stunnel) for later X9 firmware.
 - [ ] Virtual media (not started).

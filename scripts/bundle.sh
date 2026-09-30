@@ -16,7 +16,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleName</key><string>SMKVM</string>
   <key>CFBundleDisplayName</key><string>SMKVM</string>
-  <key>CFBundleIdentifier</key><string>lo.g8.smkvm</string>
+  <key>CFBundleIdentifier</key><string>io.github.glennswest.smkvm</string>
   <key>CFBundleExecutable</key><string>SMKVM</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>

@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     // MARK: web API
 
-    /// Port from `defaults write lo.g8.smkvm apiPort <n>` (default 8765).
+    /// Port from `defaults write io.github.glennswest.smkvm apiPort <n>` (default 8765).
     private func startAPI() {
         let stored = UserDefaults.standard.integer(forKey: "apiPort")
         let port = UInt16(stored > 0 && stored < 65536 ? stored : 8765)

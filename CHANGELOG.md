@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### 2026-09-30
+- **BREAKING:** Bundle identifier is now `io.github.glennswest.smkvm` (was `lo.g8.smkvm`); settings under the old ID must be copied (`defaults export lo.g8.smkvm - | defaults import io.github.glennswest.smkvm -`).
+- **docs:** README rewritten for public release (features, supported BMCs, credentials trade-off, iDRAC setup, web API, build, acknowledgements); lab-specific addresses removed from the repo.
 - **docs:** API clients read the token from `SMKVM_API` in `~/.env`.
 - **perf:** Web API server rewritten on BSD sockets: the Network.framework (NWListener) version took ~2 s to deliver a 15 KB screenshot to a remote client (0.25 s to first byte), the kernel-socket version ~3 ms.
 - **fix:** A BMC that accepts the TCP connection but never completes the handshake (e.g. iDRAC still holding a previous VNC session) no longer leaves the console stuck on "connecting": handshakes time out (15 s ATEN, 20 s VNC) and the session retries.

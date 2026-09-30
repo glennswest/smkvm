@@ -1,8 +1,8 @@
 # SMKVM web API
 
 The app serves an HTTP API and a browser page on **port 8765, all network
-interfaces** (change with `defaults write lo.g8.smkvm apiPort <n>`). It is
-meant for a remote agent (e.g. a Claude session on another machine) to watch
+interfaces** (change with `defaults write io.github.glennswest.smkvm apiPort <n>`). It is
+meant for a remote agent (e.g. an AI coding agent on another machine) to watch
 consoles and type into them in real time. There is **no power control** in
 the API by design.
 
@@ -17,17 +17,16 @@ Every `/api` request needs the token, as `Authorization: Bearer <token>` or
 Web API…** shows and copies it. `/` (the browser page) needs no token itself
 and asks for it once.
 
-Clients keep it in their `~/.env` as `SMKVM_API` (set up on stormcentral
-for the `stormcentral` account, and in the owner's `~/.env` on the Mac):
+A convenient place for clients to keep it is `~/.env` as `SMKVM_API`:
 
 ```
 set -a; . ~/.env; set +a
-curl -H "Authorization: Bearer $SMKVM_API" http://192.168.8.100:8765/api/hosts
+curl -H "Authorization: Bearer $SMKVM_API" http://<mac>:8765/api/hosts
 ```
 
 ## Endpoints
 
-`{h}` is a host's name or address (`server1`, `server1.g11.lo`, `r230`).
+`{h}` is a host's name or address (e.g. `server1`, `bmc1.example.lan`, `10.0.0.10`).
 
 | Method | Path | Body / query | Result |
 |---|---|---|---|

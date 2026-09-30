@@ -28,7 +28,7 @@ final class HostEditor: NSWindowController {
 
     private func build(isNew: Bool) {
         nameField.placeholderString = "server1"
-        addressField.placeholderString = "192.168.11.10"
+        addressField.placeholderString = "bmc.example.lan or 10.0.0.10"
         nameField.stringValue = host.name
         addressField.stringValue = host.address
         userField.stringValue = host.user
