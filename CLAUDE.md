@@ -41,11 +41,24 @@ security type 16.
 ## Work plan
 
 - [x] Scaffold
-- [ ] Protocol spec (docs/protocol.md)
+- [x] Protocol spec (docs/protocol.md)
 - [ ] BMC HTTP login + session-key fetch
 - [ ] RFB/ATEN handshake
-- [ ] Video decoder(s) for the chip on server1
-- [ ] Console view, keyboard + mouse input
+- [ ] Hermon decoder (0x59/0x00, WPCM450 — server1)
+- [ ] AST2100 decoder (0x57 — X10 boards)
+- [ ] `smkvm-probe` CLI: login → handshake → first frame → PNG (live test tool)
+- [ ] HID key mapping, ATEN key/pointer messages, keep-alive, reconnect
 - [x] Host library (multi-host), Keychain, tabbed consoles
 - [x] Console view + input capture (UI side)
 - [ ] App bundle script
+
+## In progress (2026-09-30)
+
+Implementing SMKVMCore protocol per docs/protocol.md §10: BMCWeb (login.cgi,
+jwsk JNLP, logout), Socket (blocking POSIX, TCP_NODELAY), KVMClient session
+thread, HermonDecoder, KeyMap. Then probe CLI and live test on server1;
+then AST2100.
+
+Open questions to settle live (see protocol.md UNVERIFIED): server msg 0x37
+length (2 vs 3), whether 0x15 keep-alive is accepted on 2010 firmware, JNLP
+argument layout, wheel encoding.
