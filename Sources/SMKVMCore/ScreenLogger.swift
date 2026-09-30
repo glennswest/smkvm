@@ -192,7 +192,7 @@ public final class ScreenLogger: @unchecked Sendable {
     }
 
     /// Same screen for de-duplication: differs by no more than a cursor.
-    static func nearlyIdentical(_ a: FrameSnapshot, _ b: FrameSnapshot) -> Bool {
+    public static func nearlyIdentical(_ a: FrameSnapshot, _ b: FrameSnapshot) -> Bool {
         guard a.width == b.width, a.height == b.height else { return false }
         var samples = 0, changed = 0
         a.pixels.withUnsafeBufferPointer { p in
@@ -266,18 +266,8 @@ public final class ScreenLogger: @unchecked Sendable {
     // MARK: output
 
     static func writePNG(_ f: FrameSnapshot, to url: URL) -> Bool {
-        let data = f.pixels.withUnsafeBytes { Data($0) } as CFData
-        let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue
-            | CGBitmapInfo.byteOrder32Little.rawValue)
-        guard let provider = CGDataProvider(data: data),
-              let img = CGImage(width: f.width, height: f.height, bitsPerComponent: 8, bitsPerPixel: 32,
-                                bytesPerRow: f.width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                                bitmapInfo: info, provider: provider, decode: nil,
-                                shouldInterpolate: false, intent: .defaultIntent),
-              let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
-        else { return false }
-        CGImageDestinationAddImage(dest, img, nil)
-        return CGImageDestinationFinalize(dest)
+        guard let data = f.pngData() else { return false }
+        return (try? data.write(to: url)) != nil
     }
 
     private static let dayFormat: DateFormatter = {
@@ -293,4 +283,31 @@ public final class ScreenLogger: @unchecked Sendable {
         f.dateFormat = "HHmmss.SSS"
         return f
     }()
+}
+
+extension FrameSnapshot {
+    /// The frame encoded as PNG.
+    public func pngData() -> Data? { encoded(UTType.png, quality: nil) }
+
+    /// The frame encoded as JPEG (quality 0…1).
+    public func jpegData(quality: Double = 0.75) -> Data? { encoded(UTType.jpeg, quality: quality) }
+
+    private func encoded(_ type: UTType, quality: Double?) -> Data? {
+        let f = self
+        let data = f.pixels.withUnsafeBytes { Data($0) } as CFData
+        let out = NSMutableData()
+        let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue
+            | CGBitmapInfo.byteOrder32Little.rawValue)
+        guard let provider = CGDataProvider(data: data),
+              let img = CGImage(width: f.width, height: f.height, bitsPerComponent: 8, bitsPerPixel: 32,
+                                bytesPerRow: f.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: info, provider: provider, decode: nil,
+                                shouldInterpolate: false, intent: .defaultIntent),
+              let dest = CGImageDestinationCreateWithData(out, type.identifier as CFString, 1, nil)
+        else { return nil }
+        let props = quality.map { [kCGImageDestinationLossyCompressionQuality: $0] as CFDictionary }
+        CGImageDestinationAddImage(dest, img, props)
+        return CGImageDestinationFinalize(dest) ? out as Data : nil
+    }
+
 }

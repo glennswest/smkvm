@@ -27,6 +27,12 @@ to the BMC's ATEN-flavoured VNC service on port 5900.
   the folder.
 - **Keys → Send Ctrl-Alt-Del** for the combos macOS would otherwise eat.
 
+## Web API
+
+SMKVM serves a token-protected HTTP API and a browser page on port 8765 so
+a remote agent can watch consoles and type into them live — see
+[`docs/api.md`](docs/api.md). Connection → Web API… shows the URL and token.
+
 ## Build
 
 ```

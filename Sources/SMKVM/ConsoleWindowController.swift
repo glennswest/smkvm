@@ -8,7 +8,7 @@ final class ConsoleWindowController: NSWindowController, NSWindowDelegate {
     private(set) var host: Host
     private var status = "connecting…"
     private var screensLogged = 0
-    private let client: KVMClient
+    let client: KVMClient
     private let view = ConsoleView(frame: NSRect(x: 0, y: 0, width: 1024, height: 768))
     private var sized = false
 
@@ -51,8 +51,11 @@ final class ConsoleWindowController: NSWindowController, NSWindowDelegate {
 
     var logScreens: Bool { host.logScreens }
 
-    func toggleScreenLog() {
-        host.logScreens.toggle()
+    func toggleScreenLog() { setScreenLog(!host.logScreens) }
+
+    func setScreenLog(_ on: Bool) {
+        guard on != host.logScreens else { return }
+        host.logScreens = on
         // Keep the saved host (and any edits made meanwhile) in step.
         if var saved = HostStore.shared.host(host.id) {
             saved.logScreens = host.logScreens

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-09-30
+- **feat:** Web API and browser page on port 8765 (all interfaces), token-authenticated (`Authorization: Bearer` or `?token=`; token in `~/Library/Application Support/SMKVM/api-token`, shown by **Connection → Web API…**). Hosts and status, connect/disconnect, screen PNG/JPEG with wait-for-change, MJPEG live stream, type text, key chords, mouse, screen-log toggle and listing. No power control by design. See `docs/api.md`.
 - **fix:** `screen-change` captures could be half-drawn: a screen still filling up with text (e.g. the EFI shell's mapping table) counted as "replaced", and an early partial frame was saved. Replacement now requires old content to be erased or overwritten, or most of the old background painted over; added text just updates the reference screen, so the saved image is the fully drawn screen. `cls` and mode-change saves also use that settled screen.
 - **feat:** Standard VNC console support for BMCs with a built-in VNC server (Dell iDRAC8 tested): RFB 3.3–3.8, VNC password auth (DES), Raw / CopyRect / Hextile / DesktopSize, X11 keysyms from HID usages. Per-host **Console** type (Supermicro ATEN | VNC + port) in the host editor and a Console column in the Hosts list.
 - **feat:** Power menu on VNC hosts uses Redfish (`ComputerSystem.Reset`) with the host's web credentials.

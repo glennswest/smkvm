@@ -5,11 +5,13 @@ import SMKVMCore
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var hostsWindow: HostsWindowController?
     private var consoles: [ConsoleWindowController] = []
+    private var api: APIController?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.mainMenu = makeMenu()
         showHosts(nil)
         connectFromArguments()
+        startAPI()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -43,6 +45,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         hostsWindow?.addHost()
     }
 
+    func console(for host: Host) -> ConsoleWindowController? {
+        consoles.first { $0.host.id == host.id }
+    }
+
+    /// Opens (or brings forward) the console for `host`.
+    @discardableResult
+    func openConsole(_ host: Host) -> ConsoleWindowController? {
+        open(host)
+        return console(for: host)
+    }
+
     /// Opens a console for `host`, or brings its existing console forward.
     private func open(_ host: Host) {
         if let existing = consoles.first(where: { $0.host.id == host.id }) {
@@ -68,6 +81,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc func sendCtrlAltDel(_ sender: Any?) { console?.sendCtrlAltDel() }
+
+    // MARK: web API
+
+    /// Port from `defaults write lo.g8.smkvm apiPort <n>` (default 8765).
+    private func startAPI() {
+        let stored = UserDefaults.standard.integer(forKey: "apiPort")
+        let port = UInt16(stored > 0 && stored < 65536 ? stored : 8765)
+        let a = APIController(app: self, port: port)
+        a.start()
+        api = a
+    }
+
+    @objc func showAPIInfo(_ sender: Any?) {
+        guard let api else { return }
+        let alert = NSAlert()
+        alert.messageText = "Web API"
+        alert.informativeText = """
+            http://\(ProcessInfo.processInfo.hostName):\(api.port)/  (\(api.state))
+            Token: \(api.token)
+            Stored in \(APIToken.file.path)
+            """
+        alert.addButton(withTitle: "Copy Token")
+        alert.addButton(withTitle: "Close")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(api.token, forType: .string)
+        }
+    }
 
     /// Keys a Mac keyboard lacks; the HID usage is the menu item's tag.
     @objc func sendSpecialKey(_ sender: NSMenuItem) { console?.sendKey(UInt8(sender.tag)) }
@@ -115,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                          keyEquivalent: "0")
         fileMenu.addItem(withTitle: "Add Host…", action: #selector(addHost(_:)),
                          keyEquivalent: "n")
+        fileMenu.addItem(withTitle: "Web API…", action: #selector(showAPIInfo(_:)), keyEquivalent: "")
         fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)),
                          keyEquivalent: "w")
         fileItem.submenu = fileMenu

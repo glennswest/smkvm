@@ -64,8 +64,9 @@ security type 16.
 
 ## Next
 
-- [ ] **Web API** (in progress): localhost-only HTTP server in the app
-  (127.0.0.1:8765, `HTTPServer` in core on NWListener, `APIController` in
+- [x] **Web API**: HTTP server in the app on all interfaces (owner: must be
+  reachable from stormcentral, 192.168.8.170), token auth, **no power
+  endpoint** (owner decision) (8765, `HTTPServer` in core on NWListener, `APIController` in
   the app routing to console windows on the main actor). Endpoints: hosts +
   status, screen.png (with wait-for-change), type text, keys/chords, mouse,
   power, connect/disconnect, screen-log listing; small HTML page at `/`.

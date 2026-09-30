@@ -83,6 +83,9 @@ public final class KVMClient: @unchecked Sendable {
     private var buttons: UInt8 = 0          // lock
     private var frameQueued = false         // lock
     private var latest: FrameSnapshot?      // lock
+    private var current: FrameSnapshot?     // lock
+    private var frameSeq = 0                // lock
+    private var statusText = "idle"         // lock
 
     public init(host: String, user: String, password: String, kind: ConsoleKind = .aten) {
         self.host = host
@@ -119,6 +122,7 @@ public final class KVMClient: @unchecked Sendable {
 
     func status(_ s: String) {
         log?("status: \(s)")
+        lock.lock(); statusText = s; lock.unlock()
         DispatchQueue.main.async { [self] in
             MainActor.assumeIsolated { onStatus?(s) }
         }
@@ -323,6 +327,8 @@ public final class KVMClient: @unchecked Sendable {
         screenLogger?.feed(snap)
         lock.lock()
         latest = snap
+        current = snap
+        frameSeq += 1
         let schedule = !frameQueued
         frameQueued = true
         lock.unlock()
@@ -335,6 +341,22 @@ public final class KVMClient: @unchecked Sendable {
             lock.unlock()
             if let f { MainActor.assumeIsolated { onFrame?(f) } }
         }
+    }
+
+    /// The newest decoded frame and its sequence number (increments on
+    /// every update). Safe from any thread.
+    public var currentFrame: (seq: Int, frame: FrameSnapshot?) {
+        lock.lock(); defer { lock.unlock() }
+        return (frameSeq, current)
+    }
+
+    /// True between start() and stop().
+    public var isActive: Bool { isRunning }
+
+    /// The latest status line ("connected", "no signal", an error…).
+    public var currentStatus: String {
+        lock.lock(); defer { lock.unlock() }
+        return statusText
     }
 
     // MARK: timers

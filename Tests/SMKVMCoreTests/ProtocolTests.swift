@@ -374,3 +374,37 @@ final class RealFrameTests: XCTestCase {
         XCTAssertFalse(ScreenLogger.isBlank(a))
     }
 }
+
+final class APIPieceTests: XCTestCase {
+    func testTextStrokes() {
+        let (s, bad) = TextKeys.strokes(for: "Ab1!\n")
+        XCTAssertEqual(s.map(\.hid), [0x04, 0x05, 0x1E, 0x1E, 0x28])
+        XCTAssertEqual(s.map(\.shift), [true, false, false, true, false])
+        XCTAssertTrue(bad.isEmpty)
+        XCTAssertEqual(TextKeys.strokes(for: "é").unsupported, ["é"])
+    }
+
+    func testChords() {
+        XCTAssertEqual(TextKeys.chord("ctrl+alt+delete"), [0xE0, 0xE2, 0x4C])
+        XCTAssertEqual(TextKeys.chord("F2"), [0x3B])
+        XCTAssertEqual(TextKeys.chord("f13"), [0x68])
+        XCTAssertEqual(TextKeys.chord("shift+tab"), [0xE1, 0x2B])
+        XCTAssertNil(TextKeys.chord("hyper+x"))
+    }
+
+    func testHTTPParse() {
+        let raw = "POST /api/hosts/server1/type?x=1 HTTP/1.1\r\nHost: a\r\nAuthorization: Bearer abc\r\nContent-Length: 13\r\n\r\n{\"text\":\"hi\"}"
+        let r = HTTPServer.parse(Data(raw.utf8))
+        XCTAssertEqual(r?.path, "/api/hosts/server1/type")
+        XCTAssertEqual(r?.query["x"], "1")
+        XCTAssertEqual(r?.json["text"] as? String, "hi")
+        XCTAssertEqual(r.flatMap(APIToken.presented(by:)), "abc")
+        XCTAssertNil(HTTPServer.parse(Data(raw.dropLast(3).utf8)))   // body incomplete
+    }
+
+    func testTokenCompare() {
+        XCTAssertTrue(APIToken.matches("abcd", "abcd"))
+        XCTAssertFalse(APIToken.matches("abce", "abcd"))
+        XCTAssertFalse(APIToken.matches(nil, "abcd"))
+    }
+}
