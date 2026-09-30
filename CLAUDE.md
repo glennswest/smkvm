@@ -53,7 +53,7 @@ security type 16.
 
 ## Next
 
-- [ ] **Screen log** (in progress): per-host "Log Screen on Clear" — save the
+- [x] **Screen log**: per-host "Log Screen on Clear" — save the
   last content frame as PNG on cls (screen goes uniform), mode change,
   no-signal and disconnect; dedup; ~/Pictures/SMKVM/<host>/<date>/.
   Core: ScreenLogger fed from the session thread (every update, not the

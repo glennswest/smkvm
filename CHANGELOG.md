@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### 2026-09-30
+- **feat:** Screen log — per-host **Console → Log Screen on Clear** (⌘L) saves a PNG of the last screen with content whenever it is cleared (cls), the video mode changes, the signal drops or the session ends; identical screens are saved once. Files go to `~/Pictures/SMKVM/<host>/<date>/HHmmss.SSS-<reason>.png`; **Show Screen Log in Finder** (⇧⌘L). The window title counts screens logged.
+- **fix:** App menu shortcuts work while the console has focus (other Cmd-combos still go to the host).
 - **feat:** `--connect <host>` launch argument opens a saved host's console.
 - **fix:** Screen-off no longer spins: the BMC answers each update request immediately with a screen-off rect, so polling now runs from the 1 s timer only.
 - **feat:** `smkvm-probe --power on|off|reset|softoff` and `--save-every S`.

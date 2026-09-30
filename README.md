@@ -15,6 +15,12 @@ to the BMC's ATEN-flavoured VNC service on port 5900.
   opens as a tab; drag a tab out for its own window.
 - `open SMKVM.app --args --connect server1` opens a saved host's console at
   launch (by name or address; repeatable).
+- **Console → Log Screen on Clear** (⌘L, remembered per host) saves a PNG
+  every time the screen is cleared — the last screen that had content on it,
+  not the blank one — plus on video-mode changes, loss of signal and
+  disconnect. Files: `~/Pictures/SMKVM/<host>/<date>/HHmmss.SSS-<reason>.png`
+  (reason is `cls`, `mode-change`, `no-signal` or `disconnect`). ⇧⌘L opens
+  the folder.
 - **Keys → Send Ctrl-Alt-Del** for the combos macOS would otherwise eat.
 
 ## Build

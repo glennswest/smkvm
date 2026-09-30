@@ -5,7 +5,9 @@ import SMKVMCore
 final class ConsoleWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
 
-    let host: Host
+    private(set) var host: Host
+    private var status = "connecting…"
+    private var screensLogged = 0
     private let client: KVMClient
     private let view = ConsoleView(frame: NSRect(x: 0, y: 0, width: 1024, height: 768))
     private var sized = false
@@ -34,9 +36,54 @@ final class ConsoleWindowController: NSWindowController, NSWindowDelegate {
         view.onPointer = { [client] x, y, b in client.sendPointer(x: x, y: y, buttons: b) }
         client.onFrame = { [weak self] fb in self?.frame(fb) }
         client.onStatus = { [weak self] s in
-            guard let self else { return }
-            self.window?.title = "\(self.host.title) — \(s)"
+            self?.status = s
+            self?.updateTitle()
         }
+        applyScreenLog()
+    }
+
+    private func updateTitle() {
+        var t = "\(host.title) — \(status)"
+        if host.logScreens { t += " · \(screensLogged) screen\(screensLogged == 1 ? "" : "s") logged" }
+        window?.title = t
+    }
+
+    var logScreens: Bool { host.logScreens }
+
+    func toggleScreenLog() {
+        host.logScreens.toggle()
+        // Keep the saved host (and any edits made meanwhile) in step.
+        if var saved = HostStore.shared.host(host.id) {
+            saved.logScreens = host.logScreens
+            HostStore.shared.upsert(saved)
+        }
+        applyScreenLog()
+    }
+
+    private func applyScreenLog() {
+        guard host.logScreens else {
+            client.screenLogger = nil
+            updateTitle()
+            return
+        }
+        let logger = ScreenLogger(directory: host.screenLogDirectory)
+        logger.onSaved = { [weak self] _, _ in
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.screensLogged += 1
+                    self.updateTitle()
+                }
+            }
+        }
+        client.screenLogger = logger
+        updateTitle()
+    }
+
+    func showScreenLog() {
+        let dir = host.screenLogDirectory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(dir)
     }
 
     func start() {

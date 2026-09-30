@@ -172,3 +172,52 @@ final class MessageTests: XCTestCase {
         XCTAssertEqual(t.port, 5900)
     }
 }
+
+final class ScreenLoggerTests: XCTestCase {
+    private func frame(_ w: Int, _ h: Int, _ fill: UInt32, text: Bool) -> FrameSnapshot {
+        var px = [UInt32](repeating: fill, count: w * h)
+        if text { for i in stride(from: 0, to: px.count / 2, by: 3) { px[i] = 0xFFAA_AAAA } }
+        return FrameSnapshot(width: w, height: h, pixels: px)
+    }
+
+    private func pngs(_ dir: URL) -> [String] {
+        let e = FileManager.default.enumerator(atPath: dir.path)
+        return (e?.allObjects as? [String] ?? []).filter { $0.hasSuffix(".png") }.sorted()
+    }
+
+    private func drain(_ l: ScreenLogger) {
+        let done = expectation(description: "written")
+        l.onSaved = nil
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { done.fulfill() }
+        wait(for: [done], timeout: 2)
+    }
+
+    func testBlankDetection() {
+        XCTAssertTrue(ScreenLogger.isBlank(frame(64, 48, 0xFF00_0000, text: false)))
+        XCTAssertFalse(ScreenLogger.isBlank(frame(64, 48, 0xFF00_0000, text: true)))
+        // A text cursor on an otherwise clear screen still counts as blank.
+        var cursor = frame(640, 400, 0xFF00_0000, text: false).pixels
+        for x in 0..<8 { cursor[15 * 640 + x] = 0xFFAA_AAAA; cursor[14 * 640 + x] = 0xFFAA_AAAA }
+        XCTAssertTrue(ScreenLogger.isBlank(FrameSnapshot(width: 640, height: 400, pixels: cursor)))
+    }
+
+    func testSavesContentBeforeClearOnceEach() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("smkvm-test-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let l = ScreenLogger(directory: dir)
+        let page = frame(64, 48, 0xFF00_0000, text: true)
+        let blank = frame(64, 48, 0xFF00_0000, text: false)
+        l.feed(page); l.feed(blank)          // cls → 1
+        l.feed(blank)                        // still blank → nothing
+        l.feed(page); l.feed(blank)          // same page again → deduplicated
+        l.feed(frame(80, 50, 0xFF11_1111, text: true))
+        l.feed(frame(32, 24, 0xFF00_0000, text: true))   // mode change → 2
+        l.sessionEnded()                                  // → 3
+        drain(l)
+        let files = pngs(dir)
+        XCTAssertEqual(files.count, 3, "\(files)")
+        XCTAssertEqual(files.filter { $0.hasSuffix("-cls.png") }.count, 1)
+        XCTAssertEqual(files.filter { $0.hasSuffix("-mode-change.png") }.count, 1)
+        XCTAssertEqual(files.filter { $0.hasSuffix("-disconnect.png") }.count, 1)
+    }
+}

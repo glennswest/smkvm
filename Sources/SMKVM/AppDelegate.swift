@@ -77,8 +77,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         console?.power(action, title: sender.title.replacingOccurrences(of: "…", with: ""))
     }
 
+    @objc func toggleScreenLog(_ sender: Any?) { console?.toggleScreenLog() }
+
+    @objc func showScreenLog(_ sender: Any?) { console?.showScreenLog() }
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
+        case #selector(toggleScreenLog(_:)):
+            item.state = console?.logScreens == true ? .on : .off
+            return console != nil
+        case #selector(showScreenLog(_:)):
+            return console != nil
         case #selector(sendCtrlAltDel(_:)), #selector(sendSpecialKey(_:)), #selector(powerAction(_:)):
             return console != nil
         default:
@@ -110,6 +119,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                          keyEquivalent: "w")
         fileItem.submenu = fileMenu
         main.addItem(fileItem)
+
+        let consoleItem = NSMenuItem()
+        let consoleMenu = NSMenu(title: "Console")
+        consoleMenu.addItem(withTitle: "Log Screen on Clear", action: #selector(toggleScreenLog(_:)),
+                            keyEquivalent: "l")
+        consoleMenu.addItem(withTitle: "Show Screen Log in Finder", action: #selector(showScreenLog(_:)),
+                            keyEquivalent: "L")
+        consoleItem.submenu = consoleMenu
+        main.addItem(consoleItem)
 
         let keysItem = NSMenuItem()
         let keysMenu = NSMenu(title: "Keys")

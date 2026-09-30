@@ -135,13 +135,27 @@ final class ConsoleView: NSView {
         lastFlags = e.modifierFlags
     }
 
-    /// Keep Cmd-key combos (except Cmd-Q/W handled by the menu) going to the host.
+    /// Send Cmd-key combos to the host, except the app's own menu shortcuts.
     override func performKeyEquivalent(with e: NSEvent) -> Bool {
         guard window?.firstResponder === self else { return false }
-        let chars = e.charactersIgnoringModifiers ?? ""
-        if e.modifierFlags.contains(.command), ["q", "w"].contains(chars) { return false }
+        if let menu = NSApp.mainMenu, Self.menu(menu, handles: e) { return false }
         onKey?(e.keyCode, true)
         onKey?(e.keyCode, false)
         return true
+    }
+
+    private static func menu(_ menu: NSMenu, handles e: NSEvent) -> Bool {
+        let chars = e.charactersIgnoringModifiers ?? ""
+        let mods = e.modifierFlags.intersection([.command, .option, .control, .shift])
+        for item in menu.items {
+            if let sub = item.submenu, Self.menu(sub, handles: e) { return true }
+            guard !item.keyEquivalent.isEmpty else { continue }
+            // An upper-case key equivalent implies Shift.
+            var want = item.keyEquivalentModifierMask.intersection([.command, .option, .control, .shift])
+            let key = item.keyEquivalent
+            if key != key.lowercased() { want.insert(.shift) }
+            if key.lowercased() == chars.lowercased() && want == mods { return true }
+        }
+        return false
     }
 }

@@ -44,6 +44,13 @@ public final class KVMClient: @unchecked Sendable {
     public var mouseInfoLength = 2
     /// Send the 0x15 keep-alive every 3 s (protocol.md §5.5).
     public var keepAliveEnabled = true
+    /// Receives every decoded update (not the coalesced UI frames). May be
+    /// set or cleared at any time.
+    public var screenLogger: ScreenLogger? {
+        get { lock.lock(); defer { lock.unlock() }; return _screenLogger }
+        set { lock.lock(); _screenLogger = newValue; lock.unlock() }
+    }
+    private var _screenLogger: ScreenLogger?
 
     public let host: String
     private let user: String
@@ -152,6 +159,7 @@ public final class KVMClient: @unchecked Sendable {
         let stillRunning = running
         lock.unlock()
         defer {
+            screenLogger?.sessionEnded()
             stopTimer()
             lock.lock(); socket = nil; lock.unlock()
             s.shutdown()
@@ -248,7 +256,7 @@ public final class KVMClient: @unchecked Sendable {
             let payload = try s.read(len)
 
             if w == 0xFD80 && hh == 0xFE20 {
-                if !screenOff { status("no signal") }
+                if !screenOff { status("no signal"); screenLogger?.signalLost() }
                 screenOff = true
                 continue
             }
@@ -282,6 +290,7 @@ public final class KVMClient: @unchecked Sendable {
     /// Hands the newest frame to the UI, coalescing if the UI is behind.
     private func deliver() {
         let snap = fb.snapshot()
+        screenLogger?.feed(snap)
         lock.lock()
         latest = snap
         let schedule = !frameQueued
