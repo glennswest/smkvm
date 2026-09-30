@@ -21,7 +21,9 @@ to the BMC's ATEN-flavoured VNC service on port 5900.
   every time the screen is cleared — the last screen that had content on it,
   not the blank one — plus on video-mode changes, loss of signal and
   disconnect. Files: `~/Pictures/SMKVM/<host>/<date>/HHmmss.SSS-<reason>.png`
-  (reason is `cls`, `mode-change`, `no-signal` or `disconnect`). ⇧⌘L opens
+  (reason is `cls`, `screen-change`, `mode-change`, `no-signal` or
+  `disconnect`). `screen-change` covers a clear-and-redraw too fast for the
+  BMC to show a blank frame, and full repaints; scrolling doesn't count. ⇧⌘L opens
   the folder.
 - **Keys → Send Ctrl-Alt-Del** for the combos macOS would otherwise eat.
 

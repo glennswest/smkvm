@@ -1,4 +1,5 @@
 import XCTest
+import ImageIO
 @testable import SMKVMCore
 
 /// Writes bits MSB-first into 32-bit words stored little-endian — the
@@ -219,5 +220,118 @@ final class ScreenLoggerTests: XCTestCase {
         XCTAssertEqual(files.filter { $0.hasSuffix("-cls.png") }.count, 1)
         XCTAssertEqual(files.filter { $0.hasSuffix("-mode-change.png") }.count, 1)
         XCTAssertEqual(files.filter { $0.hasSuffix("-disconnect.png") }.count, 1)
+    }
+}
+
+/// Synthetic text screens: 8×16 character cells with a per-character glyph.
+private struct TextScreen {
+    static let w = 640, h = 400, bg: UInt32 = 0xFF00_0000, fg: UInt32 = 0xFFC0_C0C0
+    var px = [UInt32](repeating: bg, count: w * h)
+
+    mutating func put(_ s: String, row: Int, col: Int = 0) {
+        for (i, ch) in s.unicodeScalars.enumerated() {
+            let seed = Int(ch.value)
+            guard ch != " " else { continue }
+            for gy in 2..<14 {
+                for gx in 1..<7 where (seed * 31 + gx * 7 + gy * 13) % 3 != 0 {
+                    px[(row * 16 + gy) * Self.w + (col + i) * 8 + gx] = Self.fg
+                }
+            }
+        }
+    }
+
+    var snap: FrameSnapshot { FrameSnapshot(width: Self.w, height: Self.h, pixels: px) }
+
+    static func page(_ lines: [String]) -> TextScreen {
+        var t = TextScreen()
+        for (i, l) in lines.enumerated() { t.put(l, row: i) }
+        return t
+    }
+}
+
+final class ScreenChangeTests: XCTestCase {
+    let a = (0..<20).map { "Line \($0): the quick brown fox jumps over the lazy dog \($0 * 7)" }
+    let b = (0..<12).map { "Other screen \($0) — BOOT MENU ENTRY NUMBER \($0 * 13)" }
+
+    func testClearAndRedrawIsReplacement() {
+        XCTAssertEqual(ScreenLogger.compare(TextScreen.page(a).snap, TextScreen.page(b).snap), .replaced)
+    }
+
+    func testScrollIsNotReplacement() {
+        let scrolled = TextScreen.page(Array(a.dropFirst()) + ["Line 20: a brand new line at the bottom"])
+        XCTAssertEqual(ScreenLogger.compare(TextScreen.page(a).snap, scrolled.snap), .scrolled)
+    }
+
+    func testTypingIsSmall() {
+        var typed = TextScreen.page(a)
+        typed.put("x", row: 21, col: 0)
+        XCTAssertEqual(ScreenLogger.compare(TextScreen.page(a).snap, typed.snap), .small)
+    }
+
+    func testAppendedLineIsNotReplacement() {
+        let post = TextScreen.page(Array(a.prefix(5)))
+        let more = TextScreen.page(Array(a.prefix(6)))
+        XCTAssertNotEqual(ScreenLogger.compare(post.snap, more.snap), .replaced)
+    }
+
+    func testBoxedScreenEditIsNotScroll() {
+        // A setup-style screen: a frame with vertical borders on every row.
+        func boxed(_ lines: [String]) -> FrameSnapshot {
+            var t = TextScreen.page(lines.map { "  " + $0 })
+            for y in 0..<TextScreen.h { t.px[y * TextScreen.w + 4] = TextScreen.fg; t.px[y * TextScreen.w + 600] = TextScreen.fg }
+            return t.snap
+        }
+        let tab1 = boxed((0..<15).map { "Main option \($0)" })
+        let tab2 = boxed((0..<15).map { "ADVANCED SETTING \($0 * 3) >" })
+        XCTAssertEqual(ScreenLogger.compare(tab1, tab2), .replaced)
+    }
+
+    func testLoggerSavesScreenBeforeFastRedraw() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("smkvm-test-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let l = ScreenLogger(directory: dir)
+        var cursor = TextScreen.page(a)
+        l.feed(TextScreen.page(a).snap)
+        cursor.put("_", row: 21)
+        l.feed(cursor.snap)                              // cursor blink: nothing
+        l.feed(TextScreen.page(b).snap)                  // redraw, no blank → save A
+        let s1 = TextScreen.page(Array(b.dropFirst()) + ["scrolled line"])
+        l.feed(s1.snap)                                  // scroll: nothing
+        let done = expectation(description: "written")
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { done.fulfill() }
+        wait(for: [done], timeout: 2)
+        let files = (FileManager.default.enumerator(atPath: dir.path)?.allObjects as? [String] ?? [])
+            .filter { $0.hasSuffix(".png") }
+        XCTAssertEqual(files.count, 1, "\(files)")
+        XCTAssertTrue(files.first?.hasSuffix("-screen-change.png") == true)
+    }
+}
+
+/// Optional check against real captures: SMKVM_REAL_POST and SMKVM_REAL_SETUP
+/// point at two PNGs of different screens at the same resolution.
+final class RealFrameTests: XCTestCase {
+    private func load(_ path: String) throws -> FrameSnapshot {
+        let src = try XCTUnwrap(CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil))
+        let img = try XCTUnwrap(CGImageSourceCreateImageAtIndex(src, 0, nil))
+        var px = [UInt32](repeating: 0, count: img.width * img.height)
+        let info = CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        px.withUnsafeMutableBytes { buf in
+            let ctx = CGContext(data: buf.baseAddress, width: img.width, height: img.height, bitsPerComponent: 8,
+                                bytesPerRow: img.width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: info)
+            ctx?.draw(img, in: CGRect(x: 0, y: 0, width: img.width, height: img.height))
+        }
+        return FrameSnapshot(width: img.width, height: img.height, pixels: px)
+    }
+
+    func testRealScreens() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let post = env["SMKVM_REAL_POST"], let setup = env["SMKVM_REAL_SETUP"] else {
+            throw XCTSkip("set SMKVM_REAL_POST / SMKVM_REAL_SETUP")
+        }
+        let a = try load(post), b = try load(setup)
+        XCTAssertEqual(ScreenLogger.compare(a, b), .replaced)
+        XCTAssertEqual(ScreenLogger.compare(b, a), .replaced)
+        XCTAssertEqual(ScreenLogger.compare(a, a), .small)
+        XCTAssertFalse(ScreenLogger.isBlank(a))
     }
 }
