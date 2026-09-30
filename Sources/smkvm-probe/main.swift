@@ -3,6 +3,8 @@
 //
 //   smkvm-probe <bmc> [user] [--seconds N] [--png out.png] [--save-every S]
 //               [--no-keepalive] [--mouse-info-len N] [--power on|off|reset|softoff]
+//               [--vnc PORT]   (standard VNC server instead of ATEN iKVM)
+//               [--tap-hid HEX] (tap one key, as a USB HID usage, 2 s after the first frame; e.g. e1 = Shift)
 //
 // The password comes from $SMKVM_PASSWORD or the app's password file
 // (PasswordStore, key "<user>@<bmc>").
@@ -37,6 +39,8 @@ case "softoff": .softOff
 default: nil
 }
 let savePeriod = Double(option("--save-every") ?? "0") ?? 0
+let vncPort = option("--vnc").flatMap(Int.init)
+let tapKey = option("--tap-hid").flatMap { UInt8($0.replacingOccurrences(of: "0x", with: ""), radix: 16) }
 guard let host = args.first else {
     FileHandle.standardError.write(Data("usage: smkvm-probe <bmc> [user] [--seconds N] [--png file]\n".utf8))
     exit(2)
@@ -51,7 +55,8 @@ guard let password = ProcessInfo.processInfo.environment["SMKVM_PASSWORD"] ?? Pa
 let start = Date()
 func stamp() -> String { String(format: "%7.3f", Date().timeIntervalSince(start)) }
 
-let client = KVMClient(host: host, user: user, password: password)
+let client = KVMClient(host: host, user: user, password: password,
+                       kind: vncPort.map { .vnc(port: $0) } ?? .aten)
 client.keepAliveEnabled = !noKeepAlive
 if let mouseInfoLen { client.mouseInfoLength = mouseInfoLen }
 client.log = { print("\(stamp()) \($0)") }
@@ -60,6 +65,12 @@ nonisolated(unsafe) var frames = 0
 nonisolated(unsafe) var lastSave: Date?
 client.onFrame = { f in
     frames += 1
+    if frames == 1, let tapKey {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            print("\(stamp()) tapping HID 0x\(String(tapKey, radix: 16))")
+            client.sendChord([tapKey])
+        }
+    }
     guard f.width > 0 else { return }
     // Save the first frame, then (with --save-every) refresh periodically.
     if let lastSave, savePeriod <= 0 || Date().timeIntervalSince(lastSave) < savePeriod { return }

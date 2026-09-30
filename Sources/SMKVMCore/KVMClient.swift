@@ -5,6 +5,7 @@ public enum KVMError: Error, CustomStringConvertible {
     case noATENSecurity([UInt8])
     case refused(String)
     case authFailed(UInt32)
+    case vncAuthFailed(String)
     case protocolError(String)
 
     public var description: String {
@@ -14,6 +15,7 @@ public enum KVMError: Error, CustomStringConvertible {
         case .noATENSecurity(let t): return "not an ATEN iKVM server (security types \(t))"
         case .refused(let s): return "BMC refused the session: \(s)"
         case .authFailed(let r): return "KVM authentication failed (\(r))"
+        case .vncAuthFailed(let s): return "VNC password rejected\(s.isEmpty ? "" : ": \(s)")"
         case .protocolError(let s): return "protocol error: \(s)"
         }
     }
@@ -21,7 +23,7 @@ public enum KVMError: Error, CustomStringConvertible {
     /// Errors that won't be fixed by reconnecting.
     var isFatal: Bool {
         switch self {
-        case .tlsUnsupported, .noATENSecurity: return true
+        case .tlsUnsupported, .noATENSecurity, .vncAuthFailed: return true
         default: return false
         }
     }
@@ -32,9 +34,19 @@ public enum PowerAction: UInt8, Sendable {
     case off = 0, on = 1, reset = 2, softOff = 3
 }
 
-/// One KVM session to one BMC: HTTP login → session key → ATEN RFB. The
-/// session runs on its own thread and reconnects (with a fresh key) when the
-/// link drops. Callbacks are delivered on the main thread.
+/// How to reach a host's console.
+public enum ConsoleKind: Sendable, Equatable {
+    /// Supermicro/ATEN iKVM: web login → session key → ATEN RFB on 5900.
+    case aten
+    /// A standard VNC server (e.g. Dell iDRAC's built-in one) on `port`,
+    /// VNC password authentication.
+    case vnc(port: Int)
+}
+
+/// One KVM session to one BMC. ATEN: HTTP login → session key → ATEN RFB;
+/// VNC: standard RFB. The session runs on its own thread and reconnects
+/// (with a fresh key for ATEN) when the link drops. Callbacks are delivered
+/// on the main thread.
 public final class KVMClient: @unchecked Sendable {
     public var onFrame: (@MainActor (FrameSnapshot) -> Void)?
     public var onStatus: (@MainActor (String) -> Void)?
@@ -53,8 +65,9 @@ public final class KVMClient: @unchecked Sendable {
     private var _screenLogger: ScreenLogger?
 
     public let host: String
-    private let user: String
-    private let password: String
+    public let kind: ConsoleKind
+    let user: String
+    let password: String
 
     private let lock = NSLock()
     private var running = false
@@ -63,16 +76,17 @@ public final class KVMClient: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
 
     // Session state (session thread, except where noted under lock).
-    private let fb = Framebuffer(width: 0, height: 0)
-    private var screenOff = false
-    private var lastRx = Date()
+    let fb = Framebuffer(width: 0, height: 0)
+    var screenOff = false
+    var lastRx = Date()
     private var heldKeys = Set<UInt8>()     // lock
     private var buttons: UInt8 = 0          // lock
     private var frameQueued = false         // lock
     private var latest: FrameSnapshot?      // lock
 
-    public init(host: String, user: String, password: String) {
+    public init(host: String, user: String, password: String, kind: ConsoleKind = .aten) {
         self.host = host
+        self.kind = kind
         self.user = user
         self.password = password
     }
@@ -98,12 +112,12 @@ public final class KVMClient: @unchecked Sendable {
         s?.shutdown()
     }
 
-    private var isRunning: Bool {
+    var isRunning: Bool {
         lock.lock(); defer { lock.unlock() }
         return running
     }
 
-    private func status(_ s: String) {
+    func status(_ s: String) {
         log?("status: \(s)")
         DispatchQueue.main.async { [self] in
             MainActor.assumeIsolated { onStatus?(s) }
@@ -113,27 +127,39 @@ public final class KVMClient: @unchecked Sendable {
     private func run() {
         var failures = 0
         while isRunning {
-            let web = BMCWeb(host: host)
+            var web: BMCWeb?
             do {
-                status("logging in")
-                try web.login(user: user, password: password)
-                let ticket = try web.fetchTicket()
-                log?("JNLP arguments: \(ticket.arguments.count), port \(ticket.port), tls \(ticket.tls)")
-                if ticket.tls { throw KVMError.tlsUnsupported(ticket.port) }
-                status("connecting")
-                try session(ticket)
+                switch kind {
+                case .aten:
+                    let w = BMCWeb(host: host)
+                    web = w
+                    status("logging in")
+                    try w.login(user: user, password: password)
+                    let ticket = try w.fetchTicket()
+                    log?("JNLP arguments: \(ticket.arguments.count), port \(ticket.port), tls \(ticket.tls)")
+                    if ticket.tls { throw KVMError.tlsUnsupported(ticket.port) }
+                    status("connecting")
+                    try withSocket(port: ticket.port, fallback: 5900) { s in
+                        try handshake(s, ticket)
+                        try runConnected { try readLoop(s) }
+                    }
+                case .vnc(let port):
+                    status("connecting")
+                    try withSocket(port: port, fallback: nil) { s in
+                        try vncHandshake(s)
+                        try runConnected { try vncReadLoop(s) }
+                    }
+                }
                 failures = 0
             } catch {
                 log?("session ended: \(error)")
                 if !isRunning { break }
                 failures += 1
                 status("\(error)")
-                if error is BMCWebError, case .loginFailed = error as! BMCWebError {
-                    web.logout(); break
-                }
-                if let k = error as? KVMError, k.isFatal { web.logout(); break }
+                if let e = error as? BMCWebError, case .loginFailed = e { web?.logout(); break }
+                if let k = error as? KVMError, k.isFatal { web?.logout(); break }
             }
-            web.logout()
+            web?.logout()
             guard isRunning else { break }
             // Back off: 2 s, 4 s, … up to 30 s.
             let delay = min(30.0, 2.0 * pow(2.0, Double(max(0, failures - 1))))
@@ -144,15 +170,15 @@ public final class KVMClient: @unchecked Sendable {
         status("disconnected")
     }
 
-    // MARK: session
-
-    private func session(_ ticket: KVMTicket) throws {
+    /// Connects (falling back to `fallback` if the first port fails), runs
+    /// `body` with the socket registered for input/timers, and tears down.
+    private func withSocket(port: Int, fallback: Int?, _ body: (Socket) throws -> Void) throws {
         let s: Socket
         do {
-            s = try Socket(host: host, port: ticket.port)
-        } catch where ticket.port != 5900 {
-            log?("port \(ticket.port) failed (\(error)); trying 5900")
-            s = try Socket(host: host, port: 5900)
+            s = try Socket(host: host, port: port)
+        } catch where fallback != nil && fallback != port {
+            log?("port \(port) failed (\(error)); trying \(fallback!)")
+            s = try Socket(host: host, port: fallback!)
         }
         lock.lock()
         socket = s
@@ -165,13 +191,17 @@ public final class KVMClient: @unchecked Sendable {
             s.shutdown()
         }
         guard stillRunning else { return }
+        try body(s)
+    }
 
-        try handshake(s, ticket)
+    private func runConnected(_ loop: () throws -> Void) throws {
         status("connected")
         lastRx = Date()
         startTimer()
-        try readLoop(s)
+        try loop()
     }
+
+    // MARK: ATEN session
 
     private func handshake(_ s: Socket, _ t: KVMTicket) throws {
         let banner = try s.read(12)
@@ -285,10 +315,10 @@ public final class KVMClient: @unchecked Sendable {
                                                width: max(fb.width, 1), height: max(fb.height, 1)))
     }
 
-    private let ast = AST2100Decoder()
+    let ast = AST2100Decoder()
 
     /// Hands the newest frame to the UI, coalescing if the UI is behind.
-    private func deliver() {
+    func deliver() {
         let snap = fb.snapshot()
         screenLogger?.feed(snap)
         lock.lock()
@@ -309,7 +339,7 @@ public final class KVMClient: @unchecked Sendable {
 
     // MARK: timers
 
-    private func startTimer() {
+    func startTimer() {
         let t = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
         var tick = 0
         t.schedule(deadline: .now() + 1, repeating: 1)
@@ -317,12 +347,16 @@ public final class KVMClient: @unchecked Sendable {
             guard let self else { return }
             tick += 1
             let idle = Date().timeIntervalSince(self.lastRx)
-            if self.keepAliveEnabled && tick % 3 == 0 { self.send(ATENMessages.keepAlive) }
-            if self.screenOff || idle > 5 {
+            // ATEN always answers an update request, so silence means a dead
+            // link. A VNC server may stay quiet while the screen is static.
+            let isATEN = self.kind == .aten
+            let (poke, dead): (TimeInterval, TimeInterval) = isATEN ? (5, 15) : (20, 45)
+            if isATEN && self.keepAliveEnabled && tick % 3 == 0 { self.send(ATENMessages.keepAlive) }
+            if (isATEN && self.screenOff) || idle > poke {
                 self.send(ATENMessages.updateRequest(incremental: false,
                                                      width: max(self.fb.width, 1), height: max(self.fb.height, 1)))
             }
-            if idle > 15 {
+            if idle > dead {
                 self.log?("no data for \(Int(idle)) s; reconnecting")
                 self.currentSocket?.shutdown()
             }
@@ -331,7 +365,7 @@ public final class KVMClient: @unchecked Sendable {
         t.resume()
     }
 
-    private func stopTimer() {
+    func stopTimer() {
         lock.lock()
         let t = timer
         timer = nil
@@ -339,13 +373,13 @@ public final class KVMClient: @unchecked Sendable {
         t?.cancel()
     }
 
-    private var currentSocket: Socket? {
+    var currentSocket: Socket? {
         lock.lock(); defer { lock.unlock() }
         return socket
     }
 
-    private func send(_ bytes: [UInt8]) {
-        guard let s = currentSocket else { return }
+    func send(_ bytes: [UInt8]) {
+        guard !bytes.isEmpty, let s = currentSocket else { return }
         do { try s.write(bytes) } catch { s.shutdown() }
     }
 
@@ -363,7 +397,17 @@ public final class KVMClient: @unchecked Sendable {
         lock.lock()
         if down { heldKeys.insert(hid) } else { heldKeys.remove(hid) }
         lock.unlock()
-        send(ATENMessages.key(hid: hid, down: down))
+        send(keyMessage(hid, down))
+    }
+
+    private func keyMessage(_ hid: UInt8, _ down: Bool) -> [UInt8] {
+        switch kind {
+        case .aten:
+            return ATENMessages.key(hid: hid, down: down)
+        case .vnc:
+            guard let sym = KeySyms.keysym(forHID: hid) else { return [] }
+            return [4, down ? 1 : 0, 0, 0] + ATENMessages.be32(sym)
+        }
     }
 
     /// Presses the keys in order, then releases them in reverse.
@@ -378,7 +422,10 @@ public final class KVMClient: @unchecked Sendable {
 
     public func sendPointer(x: Int, y: Int, buttons: UInt8) {
         lock.lock(); self.buttons = buttons; lock.unlock()
-        send(ATENMessages.pointer(x: x, y: y, buttons: buttons))
+        switch kind {
+        case .aten: send(ATENMessages.pointer(x: x, y: y, buttons: buttons))
+        case .vnc: send([5, buttons] + ATENMessages.be16(max(0, x)) + ATENMessages.be16(max(0, y)))
+        }
     }
 
     /// Releases every key still held (e.g. when the window loses focus).
@@ -387,17 +434,32 @@ public final class KVMClient: @unchecked Sendable {
         let keys = heldKeys
         heldKeys.removeAll()
         lock.unlock()
-        keys.forEach { send(ATENMessages.key(hid: $0, down: false)) }
+        keys.forEach { send(keyMessage($0, false)) }
     }
 
+    /// ATEN: in-band power message. VNC hosts: Redfish, with the host's
+    /// web credentials. Errors are reported through `onStatus`.
     public func sendPower(_ action: PowerAction) {
-        send(ATENMessages.power(action.rawValue))
+        switch kind {
+        case .aten:
+            send(ATENMessages.power(action.rawValue))
+        case .vnc:
+            guard let rf = Redfish(host: host, user: user, password: password) else { return }
+            Task { [self] in
+                do {
+                    try await rf.reset(action)
+                    log?("redfish power \(action) accepted")
+                } catch {
+                    status("power: \(error)")
+                }
+            }
+        }
     }
 
     // MARK: helpers
 
-    private func u16(_ b: [UInt8], _ o: Int) -> UInt16 { UInt16(b[o]) << 8 | UInt16(b[o + 1]) }
-    private func u32(_ b: [UInt8], _ o: Int) -> UInt32 {
+    func u16(_ b: [UInt8], _ o: Int) -> UInt16 { UInt16(b[o]) << 8 | UInt16(b[o + 1]) }
+    func u32(_ b: [UInt8], _ o: Int) -> UInt32 {
         UInt32(b[o]) << 24 | UInt32(b[o + 1]) << 16 | UInt32(b[o + 2]) << 8 | UInt32(b[o + 3])
     }
 }
