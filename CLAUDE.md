@@ -64,6 +64,13 @@ security type 16.
 
 ## Next
 
+- [ ] **Dell iDRAC support** (in progress): PowerEdge R230, iDRAC8 fw 2.86,
+  Enterprise licence, 192.168.11.151. Dell's own console (5900) is
+  proprietary/encrypted; use the iDRAC's built-in **VNC server** instead
+  (`racadm set iDRAC.VNCServer.Enable 1`, port 5901, VNC password ≤ 8 chars,
+  SSL off). Add a standard RFB client (VNC auth, Raw/CopyRect/Hextile,
+  X11 keysyms) and a per-host device type (Supermicro ATEN | VNC).
+
 - [x] **Screen log**: per-host "Log Screen on Clear" — save the
   last content frame as PNG on cls (screen goes uniform), mode change,
   no-signal and disconnect; dedup; ~/Pictures/SMKVM/<host>/<date>/.
