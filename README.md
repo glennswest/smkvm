@@ -101,6 +101,20 @@ curl -H "Authorization: Bearer $TOKEN" -d '{"keys":"ctrl+alt+delete"}' http://<m
 The API is plain HTTP: anyone who can see the traffic can read the token.
 Use it on a trusted network. Full reference: [`docs/api.md`](docs/api.md).
 
+## Download
+
+Grab `SMKVM-<version>-macos.zip` from
+[Releases](https://github.com/glennswest/smkvm/releases), unzip, and move
+`SMKVM.app` to Applications. It runs on Apple Silicon and Intel Macs
+(macOS 14+).
+
+The download is not notarised, so macOS will refuse to open it the first
+time. Either right-click the app → **Open** → **Open**, or run:
+
+```
+xattr -dr com.apple.quarantine /Applications/SMKVM.app
+```
+
 ## Build
 
 Requires macOS 14+ and Xcode / Swift 6.
@@ -114,7 +128,7 @@ open build/SMKVM.app
 
 `scripts/bundle.sh` signs with your first Apple Development / Developer ID
 identity if you have one (override with `SMKVM_SIGN_IDENTITY`), otherwise
-ad-hoc.
+ad-hoc. `scripts/release.sh` builds the universal, ad-hoc-signed release zip.
 
 ### Live test from the terminal
 

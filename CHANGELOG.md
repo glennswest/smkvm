@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-09-30
+- **build:** `scripts/release.sh` builds the downloadable app: universal (arm64 + x86_64), ad-hoc signed, zipped without extended attributes, with a SHA-256 checksum. `scripts/bundle.sh` gains `SMKVM_UNIVERSAL` and `SMKVM_OUT`.
+
 ## [v1.0.0] — 2026-09-30
 
 First public release.

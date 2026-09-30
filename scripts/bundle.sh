@@ -1,11 +1,18 @@
 #!/bin/sh
-# Release-build SMKVM and wrap it in build/SMKVM.app (ad-hoc signed).
+# Release-build SMKVM and wrap it in $SMKVM_OUT/SMKVM.app (default build/).
+#   SMKVM_UNIVERSAL=1        arm64 + x86_64
+#   SMKVM_SIGN_IDENTITY=-    ad-hoc signature (used for public downloads)
 set -eu
 cd "$(dirname "$0")/.."
 VERSION=$(cat VERSION)
-swift build -c release --product SMKVM
-BIN=$(swift build -c release --show-bin-path)/SMKVM
-APP=build/SMKVM.app
+ARCHS=""
+if [ "${SMKVM_UNIVERSAL:-0}" = 1 ]; then ARCHS="--arch arm64 --arch x86_64"; fi
+# shellcheck disable=SC2086
+swift build -c release --product SMKVM $ARCHS
+# shellcheck disable=SC2086
+BIN=$(swift build -c release --show-bin-path $ARCHS)/SMKVM
+OUT=${SMKVM_OUT:-build}
+APP=$OUT/SMKVM.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SMKVM"
