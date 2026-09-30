@@ -8,6 +8,7 @@ public enum SocketError: Error, CustomStringConvertible {
     case connect(String)
     case closed
     case io(String)
+    case timedOut
 
     public var description: String {
         switch self {
@@ -15,6 +16,7 @@ public enum SocketError: Error, CustomStringConvertible {
         case .connect(let s): return "connect failed: \(s)"
         case .closed: return "connection closed by BMC"
         case .io(let s): return "socket error: \(s)"
+        case .timedOut: return "BMC stopped responding"
         }
     }
 }
@@ -75,6 +77,13 @@ final class Socket: @unchecked Sendable {
 
     deinit { Darwin.close(fd) }
 
+    /// Bounds each blocking read (0 = wait forever). Used so a server that
+    /// accepts the TCP connection but never speaks can't stall the handshake.
+    func setReadTimeout(_ seconds: TimeInterval) {
+        var tv = timeval(tv_sec: Int(seconds), tv_usec: Int32((seconds - Double(Int(seconds))) * 1_000_000))
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    }
+
     /// Unblocks a reader stuck in recv; subsequent I/O fails.
     func shutdown() { _ = Darwin.shutdown(fd, SHUT_RDWR) }
 
@@ -94,6 +103,7 @@ final class Socket: @unchecked Sendable {
         if n == 0 { throw SocketError.closed }
         if n < 0 {
             if errno == EINTR { return }
+            if errno == EAGAIN || errno == EWOULDBLOCK { throw SocketError.timedOut }
             throw SocketError.io(String(cString: strerror(errno)))
         }
         bufEnd += n

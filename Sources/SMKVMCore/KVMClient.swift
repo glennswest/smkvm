@@ -144,13 +144,18 @@ public final class KVMClient: @unchecked Sendable {
                     if ticket.tls { throw KVMError.tlsUnsupported(ticket.port) }
                     status("connecting")
                     try withSocket(port: ticket.port, fallback: 5900) { s in
+                        s.setReadTimeout(15)
                         try handshake(s, ticket)
+                        s.setReadTimeout(0)
                         try runConnected { try readLoop(s) }
                     }
                 case .vnc(let port):
                     status("connecting")
                     try withSocket(port: port, fallback: nil) { s in
+                        // iDRAC can take ~10 s to greet while it releases a previous session.
+                        s.setReadTimeout(20)
                         try vncHandshake(s)
+                        s.setReadTimeout(0)
                         try runConnected { try vncReadLoop(s) }
                     }
                 }
