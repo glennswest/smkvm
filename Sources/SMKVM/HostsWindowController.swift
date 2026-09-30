@@ -10,7 +10,7 @@ final class HostsWindowController: NSWindowController, NSTableViewDataSource, NS
 
     init(onConnect: @escaping (Host) -> Void) {
         self.onConnect = onConnect
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 340),
                          styleMask: [.titled, .closable, .resizable, .miniaturizable],
                          backing: .buffered, defer: false)
         w.title = "Hosts"
@@ -28,7 +28,7 @@ final class HostsWindowController: NSWindowController, NSTableViewDataSource, NS
     required init?(coder: NSCoder) { fatalError("not used") }
 
     private func build() {
-        for (id, title, width) in [("name", "Name", 140.0), ("address", "BMC", 150.0), ("user", "User", 100.0)] {
+        for (id, title, width) in [("name", "Name", 140.0), ("address", "BMC", 150.0), ("user", "User", 80.0), ("type", "Console", 90.0)] {
             let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
             col.title = title
             col.width = width
@@ -77,6 +77,7 @@ final class HostsWindowController: NSWindowController, NSTableViewDataSource, NS
         switch col?.identifier.rawValue {
         case "name": text = h.title
         case "address": text = h.address
+        case "type": text = h.type == "vnc" ? "VNC :\(h.vncPort)" : "Supermicro"
         default: text = h.user
         }
         let cell = NSTextField(labelWithString: text)

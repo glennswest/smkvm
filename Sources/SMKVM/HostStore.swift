@@ -1,4 +1,5 @@
 import Foundation
+import SMKVMCore
 
 /// A saved BMC. The password lives in PasswordStore, keyed by user@host.
 struct Host: Codable, Equatable, Identifiable {
@@ -8,6 +9,12 @@ struct Host: Codable, Equatable, Identifiable {
     var user: String
     /// Save a PNG of the screen each time it is cleared (ScreenLogger).
     var logScreens = false
+    /// "aten" (Supermicro iKVM) or "vnc" (standard VNC, e.g. Dell iDRAC).
+    var type = "aten"
+    /// VNC server port (iDRAC's built-in VNC server defaults to 5901).
+    var vncPort = 5901
+
+    var consoleKind: ConsoleKind { type == "vnc" ? .vnc(port: vncPort) : .aten }
 
     var title: String { name.isEmpty ? address : name }
 
@@ -34,6 +41,8 @@ struct Host: Codable, Equatable, Identifiable {
         address = try c.decode(String.self, forKey: .address)
         user = try c.decode(String.self, forKey: .user)
         logScreens = try c.decodeIfPresent(Bool.self, forKey: .logScreens) ?? false
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "aten"
+        vncPort = try c.decodeIfPresent(Int.self, forKey: .vncPort) ?? 5901
     }
 }
 

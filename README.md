@@ -42,6 +42,24 @@ Requires macOS 14+ and Xcode / Swift 6.
 |---|---|---|
 | Nuvoton WPCM450 ("Hermon") | X8, most X9 | encoding 0x59 — supported |
 | ASPEED AST2100/2300/2400 | X10 | encoding 0x57 — supported (untested live) |
+| Dell iDRAC8 (Enterprise) | PowerEdge 13G (e.g. R230) | built-in VNC server — supported |
+
+### Dell iDRAC
+
+Dell's own virtual console (port 5900) is proprietary and encrypted; SMKVM
+uses the iDRAC's built-in VNC server instead (needs an Enterprise licence).
+Enable it once:
+
+```
+racadm set iDRAC.VNCServer.Password <up to 8 chars>
+racadm set iDRAC.VNCServer.Enable 1
+racadm set iDRAC.VNCServer.Timeout 10800
+```
+
+Add the host with **Console: VNC**, port 5901, the iDRAC login as user and
+the VNC password as password (the Power menu uses Redfish with the same
+user/password, so keep the VNC password equal to the login password). The
+iDRAC takes 6–11 s to accept a VNC session and allows one at a time.
 
 Later X9 firmware that wraps the KVM port in TLS ("KVM SSL" on) is not
 supported yet; turn KVM SSL off in the BMC web UI.

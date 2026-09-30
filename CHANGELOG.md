@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### 2026-09-30
+- **feat:** Standard VNC console support for BMCs with a built-in VNC server (Dell iDRAC8 tested): RFB 3.3–3.8, VNC password auth (DES), Raw / CopyRect / Hextile / DesktopSize, X11 keysyms from HID usages. Per-host **Console** type (Supermicro ATEN | VNC + port) in the host editor and a Console column in the Hosts list.
+- **feat:** Power menu on VNC hosts uses Redfish (`ComputerSystem.Reset`) with the host's web credentials.
+- **feat:** `smkvm-probe --vnc PORT` and `--tap-hid HEX`.
 - **fix:** Screen log missed clears that the BMC never showed as a blank frame (clear-and-redraw within one update, or a full repaint such as POST → setup). It now also saves the previous screen when most of its content is replaced (`-screen-change.png`); scrolling, typing, highlights and cursor blink don't count. Duplicate detection ignores cursor-sized differences.
 - **BREAKING:** Passwords no longer use the Keychain (its "SMKVM wants to access key…" prompts kept appearing). They are stored in `~/Library/Application Support/SMKVM/passwords.json`, mode 0600, keyed `user@host`; removing a host removes its password. Passwords previously saved in the Keychain are not migrated — re-enter them in the host editor.
 - **build:** `scripts/bundle.sh` signs with a stable identity (Apple Development, override `SMKVM_SIGN_IDENTITY`) instead of ad-hoc.

@@ -10,13 +10,15 @@ final class HostEditor: NSWindowController {
     private let addressField = NSTextField()
     private let userField = NSTextField()
     private let passField = NSSecureTextField()
+    private let typePopup = NSPopUpButton()
+    private let portField = NSTextField()
     private var host: Host
     private let done: (Host?) -> Void
 
     init(host: Host?, done: @escaping (Host?) -> Void) {
         self.host = host ?? Host(name: "", address: "", user: "ADMIN")
         self.done = done
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 190),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
                          styleMask: [.titled], backing: .buffered, defer: false)
         super.init(window: w)
         build(isNew: host == nil)
@@ -30,6 +32,12 @@ final class HostEditor: NSWindowController {
         nameField.stringValue = host.name
         addressField.stringValue = host.address
         userField.stringValue = host.user
+        typePopup.addItems(withTitles: ["Supermicro (ATEN iKVM)", "VNC (Dell iDRAC, others)"])
+        typePopup.selectItem(at: host.type == "vnc" ? 1 : 0)
+        typePopup.target = self
+        typePopup.action = #selector(typeChanged)
+        portField.stringValue = String(host.vncPort)
+        portField.isEnabled = host.type == "vnc"
         if !isNew {
             passField.stringValue = PasswordStore.password(host: host.address, user: host.user) ?? ""
         } else if let last = HostEditor.lastSaved {
@@ -49,6 +57,8 @@ final class HostEditor: NSWindowController {
             [NSTextField(labelWithString: "BMC address:"), addressField],
             [NSTextField(labelWithString: "User:"), userField],
             [NSTextField(labelWithString: "Password:"), passField],
+            [NSTextField(labelWithString: "Console:"), typePopup],
+            [NSTextField(labelWithString: "VNC port:"), portField],
             [NSGridCell.emptyContentView, buttons],
         ])
         grid.column(at: 0).xPlacement = .trailing
@@ -64,6 +74,10 @@ final class HostEditor: NSWindowController {
         ])
     }
 
+    @objc private func typeChanged() {
+        portField.isEnabled = typePopup.indexOfSelectedItem == 1
+    }
+
     @objc private func ok() {
         let address = addressField.stringValue.trimmingCharacters(in: .whitespaces)
         let user = userField.stringValue.trimmingCharacters(in: .whitespaces)
@@ -71,6 +85,8 @@ final class HostEditor: NSWindowController {
         host.name = nameField.stringValue.trimmingCharacters(in: .whitespaces)
         host.address = address
         host.user = user
+        host.type = typePopup.indexOfSelectedItem == 1 ? "vnc" : "aten"
+        host.vncPort = Int(portField.stringValue) ?? 5901
         PasswordStore.save(host: address, user: user, password: passField.stringValue)
         HostEditor.lastSaved = (user, passField.stringValue)
         finish(host)

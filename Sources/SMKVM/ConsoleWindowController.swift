@@ -14,7 +14,8 @@ final class ConsoleWindowController: NSWindowController, NSWindowDelegate {
 
     init(host: Host, password: String) {
         self.host = host
-        self.client = KVMClient(host: host.address, user: host.user, password: password)
+        self.client = KVMClient(host: host.address, user: host.user, password: password,
+                                kind: host.consoleKind)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1024, height: 768),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
                          backing: .buffered, defer: false)
