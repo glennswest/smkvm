@@ -1,5 +1,7 @@
 import Foundation
-import Network
+#if canImport(Darwin)
+import Darwin
+#endif
 
 public struct HTTPRequest: Sendable {
     public let method: String
@@ -45,60 +47,117 @@ public struct HTTPResponse: Sendable {
     }
 }
 
-/// A small HTTP/1.1 server (one request per connection). Binds to all
-/// interfaces by default; pass `bindAddress: "127.0.0.1"` for loopback only.
+/// A small HTTP/1.1 server (one request per connection) on plain BSD
+/// sockets. Binds to all interfaces by default; pass `bindAddress:
+/// "127.0.0.1"` for loopback only.
+///
+/// (An NWListener version stalled ~2 s per 15 KB response to remote
+/// clients — Network.framework's own TCP stack — while the kernel stack is
+/// instant, so this uses the kernel directly.)
 public final class HTTPServer: @unchecked Sendable {
     public typealias Handler = @Sendable (HTTPRequest, @escaping @Sendable (HTTPResponse) -> Void) -> Void
 
-    private let listener: NWListener
+    private let fd: Int32
     private let handler: Handler
-    private let queue = DispatchQueue(label: "smkvm.http")
+    private let stopped = LockedFlag(false)
 
     public init(port: UInt16, bindAddress: String? = nil, handler: @escaping Handler) throws {
-        let params = NWParameters.tcp
-        params.allowLocalEndpointReuse = true
-        let p = NWEndpoint.Port(rawValue: port)!
-        if let bindAddress {
-            params.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(bindAddress), port: p)
-            listener = try NWListener(using: params)
-        } else {
-            listener = try NWListener(using: params, on: p)
+        let s = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard s >= 0 else { throw SocketError.io(String(cString: strerror(errno))) }
+        var one: Int32 = 1
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size))
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr.s_addr = bindAddress.map { inet_addr($0) } ?? INADDR_ANY
+        let ok = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(s, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+            }
         }
+        guard ok, Darwin.listen(s, 64) == 0 else {
+            let e = String(cString: strerror(errno))
+            Darwin.close(s)
+            throw SocketError.io("port \(port): \(e)")
+        }
+        fd = s
         self.handler = handler
     }
 
     public func start(onState: (@Sendable (String) -> Void)? = nil) {
-        listener.stateUpdateHandler = { state in
-            switch state {
-            case .ready: onState?("ready")
-            case .failed(let e): onState?("failed: \(e)")
-            default: break
-            }
-        }
-        listener.newConnectionHandler = { [weak self] conn in self?.accept(conn) }
-        listener.start(queue: queue)
+        onState?("ready")
+        let t = Thread { [self] in acceptLoop() }
+        t.name = "smkvm http"
+        t.start()
     }
 
-    public func stop() { listener.cancel() }
-
-    private func accept(_ conn: NWConnection) {
-        conn.start(queue: queue)
-        receive(conn, Data())
+    public func stop() {
+        stopped.set(true)
+        Darwin.shutdown(fd, SHUT_RDWR)
+        Darwin.close(fd)
     }
 
-    private func receive(_ conn: NWConnection, _ buffer: Data) {
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { [weak self] data, _, done, err in
-            guard let self else { return }
-            var buf = buffer
-            if let data { buf.append(data) }
-            if let req = Self.parse(buf) {
-                self.handler(req) { resp in self.send(conn, resp) }
-            } else if done || err != nil || buf.count > 16 << 20 {
-                conn.cancel()
-            } else {
-                self.receive(conn, buf)
+    private func acceptLoop() {
+        while !stopped.get() {
+            let c = Darwin.accept(fd, nil, nil)
+            if c < 0 {
+                if errno == EINTR { continue }
+                return
             }
+            var one: Int32 = 1
+            setsockopt(c, IPPROTO_TCP, TCP_NODELAY, &one, socklen_t(MemoryLayout<Int32>.size))
+            setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+            var tv = timeval(tv_sec: 10, tv_usec: 0)
+            setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+            DispatchQueue.global(qos: .userInitiated).async { [self] in serve(c) }
         }
+    }
+
+    private func serve(_ c: Int32) {
+        var buf = Data()
+        var chunk = [UInt8](repeating: 0, count: 65536)
+        var req: HTTPRequest?
+        while req == nil {
+            let n = recv(c, &chunk, chunk.count, 0)
+            if n <= 0 || buf.count > 16 << 20 { Darwin.close(c); return }
+            buf.append(contentsOf: chunk[0..<n])
+            req = Self.parse(buf)
+        }
+        handler(req!) { resp in
+            DispatchQueue.global(qos: .userInitiated).async { Self.respond(c, resp) }
+        }
+    }
+
+    private static func write(_ c: Int32, _ data: Data) -> Bool {
+        data.withUnsafeBytes { p in
+            var off = 0
+            while off < p.count {
+                let n = send(c, p.baseAddress! + off, p.count - off, 0)
+                if n < 0 { if errno == EINTR { continue }; return false }
+                off += n
+            }
+            return true
+        }
+    }
+
+    private static func respond(_ c: Int32, _ r: HTTPResponse) {
+        defer {
+            Darwin.shutdown(c, SHUT_WR)
+            Darwin.close(c)
+        }
+        if let stream = r.stream {
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: \(r.contentType)\r\nCache-Control: no-store\r\n"
+                + "Connection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n"
+            guard write(c, Data(head.utf8)) else { return }
+            stream { data in write(c, data) }
+            return
+        }
+        let reason = [200: "OK", 202: "Accepted", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found",
+                      409: "Conflict", 500: "Internal Server Error", 503: "Service Unavailable"][r.status] ?? "Status"
+        var head = "HTTP/1.1 \(r.status) \(reason)\r\n"
+        head += "Content-Type: \(r.contentType)\r\nContent-Length: \(r.body.count)\r\n"
+        head += "Cache-Control: no-store\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n"
+        _ = write(c, Data(head.utf8) + r.body)
     }
 
     /// A complete request, or nil if more bytes are needed.
@@ -121,43 +180,7 @@ public final class HTTPServer: @unchecked Sendable {
         var query: [String: String] = [:]
         for item in comps?.queryItems ?? [] { query[item.name] = item.value ?? "" }
         return HTTPRequest(method: String(parts[0]), path: comps?.percentEncodedPath.removingPercentEncoding ?? target,
-                           query: query, headers: headers, body: buf[bodyStart..<bodyStart + length])
-    }
-
-    private func send(_ conn: NWConnection, _ r: HTTPResponse) {
-        if let stream = r.stream {
-            let head = "HTTP/1.1 200 OK\r\nContent-Type: \(r.contentType)\r\nCache-Control: no-store\r\n"
-                + "Connection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n"
-            conn.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
-            let alive = LockedFlag(true)
-            conn.stateUpdateHandler = { state in
-                switch state {
-                case .failed, .cancelled: alive.set(false)
-                default: break
-                }
-            }
-            DispatchQueue.global(qos: .userInitiated).async {
-                stream { data in
-                    guard alive.get() else { return false }
-                    // Back-pressure: wait for each chunk to be handed to TCP.
-                    let sent = DispatchSemaphore(value: 0)
-                    conn.send(content: data, completion: .contentProcessed { err in
-                        if err != nil { alive.set(false) }
-                        sent.signal()
-                    })
-                    if sent.wait(timeout: .now() + 10) == .timedOut { alive.set(false) }
-                    return alive.get()
-                }
-                conn.cancel()
-            }
-            return
-        }
-        let reason = [200: "OK", 202: "Accepted", 400: "Bad Request", 404: "Not Found", 409: "Conflict",
-                      500: "Internal Server Error", 503: "Service Unavailable"][r.status] ?? "Status"
-        var head = "HTTP/1.1 \(r.status) \(reason)\r\n"
-        head += "Content-Type: \(r.contentType)\r\nContent-Length: \(r.body.count)\r\n"
-        head += "Cache-Control: no-store\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n"
-        conn.send(content: Data(head.utf8) + r.body, completion: .contentProcessed { _ in conn.cancel() })
+                           query: query, headers: headers, body: Data(buf[bodyStart..<bodyStart + length]))
     }
 }
 

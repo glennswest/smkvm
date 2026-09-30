@@ -408,3 +408,28 @@ final class APIPieceTests: XCTestCase {
         XCTAssertFalse(APIToken.matches(nil, "abcd"))
     }
 }
+
+final class EncodeSpeedTests: XCTestCase {
+    func testEncodeSpeed() {
+        let f = FrameSnapshot(width: 1024, height: 768, pixels: (0..<(1024 * 768)).map { UInt32($0 % 7 == 0 ? 0xFFC0C0C0 : 0xFF000000) })
+        var t = Date()
+        _ = f.pngData()
+        print("png: \(Date().timeIntervalSince(t))")
+        t = Date()
+        _ = f.jpegData()
+        print("jpg: \(Date().timeIntervalSince(t))")
+    }
+}
+
+/// Manual: SMKVM_SERVE_TEST=1 swift test --filter HTTPServeTests — serves
+/// 15 KB on :8767 for 20 s so it can be timed from another machine.
+final class HTTPServeTests: XCTestCase {
+    func testServeForTiming() throws {
+        guard ProcessInfo.processInfo.environment["SMKVM_SERVE_TEST"] != nil else { throw XCTSkip("manual") }
+        let body = Data((0..<15000).map { UInt8($0 & 0xFF) })
+        let s = try HTTPServer(port: 8767) { _, respond in respond(HTTPResponse(contentType: "application/octet-stream", body: body)) }
+        s.start()
+        RunLoop.current.run(until: Date().addingTimeInterval(20))
+        s.stop()
+    }
+}
