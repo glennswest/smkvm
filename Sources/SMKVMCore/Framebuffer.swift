@@ -37,8 +37,26 @@ public final class Framebuffer: @unchecked Sendable {
         }
     }
 
+    /// Direct access for decoders: (pixels, width, height).
+    public func withPixels<R>(_ body: (UnsafeMutableBufferPointer<UInt32>, Int, Int) throws -> R) rethrows -> R {
+        let w = width, h = height
+        return try pixels.withUnsafeMutableBufferPointer { try body($0, w, h) }
+    }
+
+    /// An immutable copy for handing to the UI thread.
+    public func snapshot() -> FrameSnapshot {
+        FrameSnapshot(width: width, height: height, pixels: pixels)
+    }
+
     @inline(__always)
     public static func argb(_ r: UInt8, _ g: UInt8, _ b: UInt8) -> UInt32 {
         0xFF00_0000 | UInt32(r) << 16 | UInt32(g) << 8 | UInt32(b)
     }
+}
+
+/// A frame as delivered to the UI.
+public struct FrameSnapshot: Sendable {
+    public let width: Int
+    public let height: Int
+    public let pixels: [UInt32]
 }
