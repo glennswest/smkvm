@@ -10,7 +10,9 @@ to the BMC's ATEN-flavoured VNC service on port 5900.
 ## Using it
 
 - **Hosts** window (⌘0) lists saved BMCs. Add one with ⌘N: name, BMC address,
-  IPMI user and password (stored in the macOS Keychain).
+  IPMI user and password. Passwords are kept in
+  `~/Library/Application Support/SMKVM/passwords.json` (readable only by you;
+  deliberately not the Keychain, to avoid its access prompts).
 - Double-click a host, or select several and press Connect. Each console
   opens as a tab; drag a tab out for its own window.
 - `open SMKVM.app --args --connect server1` opens a saved host's console at
@@ -48,7 +50,7 @@ supported yet; turn KVM SSL off in the BMC web UI.
 swift run smkvm-probe 192.168.11.10 ADMIN --seconds 15 --png server1.png
 ```
 
-Uses `$SMKVM_PASSWORD` or the app's Keychain item. Prints the handshake and
+Uses `$SMKVM_PASSWORD` or the app's password file. Prints the handshake and
 protocol log and saves the first frame.
 
 ## Status

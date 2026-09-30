@@ -1,6 +1,6 @@
 import Foundation
 
-/// A saved BMC. The password lives in the Keychain, keyed by host+user.
+/// A saved BMC. The password lives in PasswordStore, keyed by user@host.
 struct Host: Codable, Equatable, Identifiable {
     var id = UUID()
     var name: String

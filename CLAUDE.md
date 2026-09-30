@@ -17,14 +17,15 @@ swift test
 scripts/bundle.sh      # release build → build/SMKVM.app
 ```
 
-## Signing and the Keychain
+## Passwords and signing
+
+BMC passwords live in `~/Library/Application Support/SMKVM/passwords.json`
+(0600, `PasswordStore` in SMKVMCore, shared with smkvm-probe). **Owner
+decision 2026-09-30: no Keychain** — its per-item access prompts were not
+wanted; do not reintroduce it.
 
 `scripts/bundle.sh` signs with the first Apple Development / Developer ID
-identity (or `SMKVM_SIGN_IDENTITY`). Keep it that way: an ad-hoc signature
-changes every build, so every Keychain item re-prompts for the login
-password after each rebuild. Items created outside the app (e.g. with
-`security add-generic-password`) need `-T build/SMKVM.app` or the app will
-prompt once per item.
+identity (or `SMKVM_SIGN_IDENTITY`), falling back to ad-hoc.
 
 ## Version
 
@@ -36,7 +37,8 @@ Single source: `VERSION` (also stamped into the app's Info.plist by
 - `Sources/SMKVMCore` — protocol: BMC HTTP login/session key, RFB/ATEN
   handshake, message parsing, video decoders, key mapping. No UI.
 - `Sources/SMKVM` — AppKit app: host library (HostStore/HostsWindow/HostEditor),
-  tabbed console windows (ConsoleWindowController/ConsoleView), Keychain.
+  tabbed console windows (ConsoleWindowController/ConsoleView).
+- `Sources/SMKVMCore/PasswordStore.swift` — password file (shared with the probe).
 - `Sources/smkvm-probe` — headless live-test CLI.
 - `Tests/SMKVMCoreTests` — decoder and parser tests.
 - `docs/protocol.md` — the ATEN protocol as implemented here.
@@ -56,7 +58,7 @@ security type 16.
 - [x] AST2100 decoder (0x57 — X10 boards; synthetic tests only)
 - [x] `smkvm-probe` CLI: login → handshake → first frame → PNG (live test tool)
 - [x] HID key mapping, ATEN key/pointer messages, keep-alive, reconnect
-- [x] Host library (multi-host), Keychain, tabbed consoles
+- [x] Host library (multi-host), password file, tabbed consoles
 - [x] Console view + input capture (UI side)
 - [x] App bundle script
 

@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             existing.window?.makeKeyAndOrderFront(nil)
             return
         }
-        let password = Keychain.password(host: host.address, user: host.user) ?? ""
+        let password = PasswordStore.password(host: host.address, user: host.user) ?? ""
         let c = ConsoleWindowController(host: host, password: password)
         c.onClose = { [weak self, weak c] in
             self?.consoles.removeAll { $0 === c }

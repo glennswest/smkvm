@@ -4,11 +4,10 @@
 //   smkvm-probe <bmc> [user] [--seconds N] [--png out.png] [--save-every S]
 //               [--no-keepalive] [--mouse-info-len N] [--power on|off|reset|softoff]
 //
-// The password comes from $SMKVM_PASSWORD or the same Keychain item the app
-// uses (service "smkvm.bmc", account "<user>@<bmc>").
+// The password comes from $SMKVM_PASSWORD or the app's password file
+// (PasswordStore, key "<user>@<bmc>").
 import Foundation
 import ImageIO
-import Security
 import SMKVMCore
 import UniformTypeIdentifiers
 
@@ -44,19 +43,8 @@ guard let host = args.first else {
 }
 let user = args.count > 1 ? args[1] : "ADMIN"
 
-@MainActor func keychainPassword() -> String? {
-    let q: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "smkvm.bmc",
-        kSecAttrAccount as String: "\(user)@\(host)",
-        kSecReturnData as String: true,
-    ]
-    var out: CFTypeRef?
-    guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
-    return String(data: d, encoding: .utf8)
-}
-guard let password = ProcessInfo.processInfo.environment["SMKVM_PASSWORD"] ?? keychainPassword() else {
-    print("no password: set SMKVM_PASSWORD or add Keychain item smkvm.bmc / \(user)@\(host)")
+guard let password = ProcessInfo.processInfo.environment["SMKVM_PASSWORD"] ?? PasswordStore.password(host: host, user: user) else {
+    print("no password: set SMKVM_PASSWORD or save \(user)@\(host) in the app (\(PasswordStore.file.path))")
     exit(2)
 }
 

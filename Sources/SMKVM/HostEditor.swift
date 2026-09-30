@@ -1,4 +1,5 @@
 import AppKit
+import SMKVMCore
 
 /// Sheet for adding or editing a host.
 final class HostEditor: NSWindowController {
@@ -30,7 +31,7 @@ final class HostEditor: NSWindowController {
         addressField.stringValue = host.address
         userField.stringValue = host.user
         if !isNew {
-            passField.stringValue = Keychain.password(host: host.address, user: host.user) ?? ""
+            passField.stringValue = PasswordStore.password(host: host.address, user: host.user) ?? ""
         } else if let last = HostEditor.lastSaved {
             // BMCs in one rack usually share credentials; start from the last ones.
             userField.stringValue = last.user
@@ -70,7 +71,7 @@ final class HostEditor: NSWindowController {
         host.name = nameField.stringValue.trimmingCharacters(in: .whitespaces)
         host.address = address
         host.user = user
-        Keychain.save(host: address, user: user, password: passField.stringValue)
+        PasswordStore.save(host: address, user: user, password: passField.stringValue)
         HostEditor.lastSaved = (user, passField.stringValue)
         finish(host)
     }

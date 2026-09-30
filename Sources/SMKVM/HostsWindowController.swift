@@ -1,4 +1,5 @@
 import AppKit
+import SMKVMCore
 
 /// The host library: saved BMCs, add/edit/remove, connect.
 final class HostsWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
@@ -105,7 +106,10 @@ final class HostsWindowController: NSWindowController, NSTableViewDataSource, NS
     }
 
     @objc private func removeHosts() {
-        selected.forEach { HostStore.shared.remove($0.id) }
+        for h in selected {
+            HostStore.shared.remove(h.id)
+            PasswordStore.remove(host: h.address, user: h.user)
+        }
     }
 
     private func runEditor(_ h: Host?) {
