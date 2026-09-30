@@ -53,6 +53,12 @@ security type 16.
 
 ## Next
 
+- [ ] **Screen log** (in progress): per-host "Log Screen on Clear" — save the
+  last content frame as PNG on cls (screen goes uniform), mode change,
+  no-signal and disconnect; dedup; ~/Pictures/SMKVM/<host>/<date>/.
+  Core: ScreenLogger fed from the session thread (every update, not the
+  coalesced UI frames). UI: Console menu toggle + open folder.
+
 - [x] Live handshake on server1–8.g11.lo (X9 WPCM450) — login, JNLP,
   auth, ServerInit, keep-alive all verified; see protocol.md "Live results".
 - [ ] **Live video/input test** — all eight hosts were powered off; needs a
