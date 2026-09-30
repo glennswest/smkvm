@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### 2026-09-30
+- **fix:** Screen-off no longer spins: the BMC answers each update request immediately with a screen-off rect, so polling now runs from the 1 s timer only.
+- **feat:** `smkvm-probe --power on|off|reset|softoff` and `--save-every S`.
+- **docs:** Live handshake results from server1–8 (X9 WPCM450) recorded in protocol.md.
 - **feat:** ATEN iKVM protocol client (SMKVMCore): BMC web login (`login.cgi`, SID), JNLP ticket fetch with single-use RFB credentials, ATEN RFB handshake (security type 16, pipelined ClientInit), server message table, keep-alive, idle watchdog, screen-off polling, auto-reconnect with backoff, web logout.
 - **feat:** Hermon video decoder (WPCM450, encoding 0x59/0x00) and AST2100 decoder (encoding 0x57, DCT + VQ).
 - **feat:** USB HID keyboard mapping from macOS keycodes; 18-byte ATEN key/pointer events; stuck-key release on focus loss.

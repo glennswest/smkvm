@@ -609,6 +609,25 @@ Modifier keys arrive through `flagsChanged:` on macOS, not keyDown/keyUp, so der
 
 ---
 
+## Live results (smkvm, 2026-09-30)
+
+Tested against 8 × X9 WPCM450 BMCs (server1–8.g11.lo, ATEN firmware
+"(c) 2010"), all hosts powered off:
+
+- **Verified:** plain `POST /cgi/login.cgi` (name/pwd, not base64) → SID;
+  `url_redirect.cgi?url_name=ikvm&url_type=jwsk` returns the JNLP with **8
+  arguments** (no TLS args 8/9); RFB on 5900 plaintext; security type 0x10
+  followed by a 24-byte blob starting `a7 f9` (PR408's `0xAFF90FB0` pattern);
+  credentials = JNLP args 1/2; pipelined ClientInit (shared=1) accepted;
+  ServerInit name `ATEN iKVM Server`, 12-byte trailer ending `01 01 01 01`.
+- **0x39** arrives right after ServerInit: a=1, b=1, text
+  `"<n> ADMIN <client-ip>"` — in control.
+- **Screen off:** the BMC answers every FBUR at once with the 0xFD80×0xFE20
+  rect, so replying to each one spins (~1000/s). Poll at 1 Hz instead.
+- **0x15 keep-alive** every 3 s: accepted (session stayed up, no errors).
+- Still UNVERIFIED (need a powered-on host): Hermon tile/raw decode on real
+  traffic, 0x37 length, 0x04 cursor messages, input, wheel, in-band power.
+
 ## Appendices
 
 The research copy of this spec carried verbatim third-party decoder source

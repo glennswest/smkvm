@@ -238,7 +238,7 @@ public final class KVMClient: @unchecked Sendable {
     private func framebufferUpdate(_ s: Socket) throws {
         _ = try s.u8()
         let rects = Int(try s.u16())
-        var full = false
+        var full = false, painted = false
         for _ in 0..<rects {
             let h = try s.read(20)
             let w = Int(u16(h, 4)), hh = Int(u16(h, 6))
@@ -259,6 +259,7 @@ public final class KVMClient: @unchecked Sendable {
                 log?("resolution \(w)x\(hh), encoding 0x\(String(enc, radix: 16))")
                 full = true
             }
+            painted = true
             switch enc {
             case 0x59, 0x00:
                 try HermonDecoder.decode(payload, width: w, height: hh, into: fb)
@@ -268,8 +269,11 @@ public final class KVMClient: @unchecked Sendable {
                 throw DecodeError.unsupported("encoding 0x\(String(enc, radix: 16))")
             }
         }
-        if rects > 0 { deliver() }
-        try s.write(ATENMessages.updateRequest(incremental: !full && !screenOff,
+        if painted { deliver() }
+        // While the screen is off the 1 s timer polls; answering every
+        // screen-off update straight away would spin at the BMC's reply rate.
+        guard !screenOff else { return }
+        try s.write(ATENMessages.updateRequest(incremental: !full,
                                                width: max(fb.width, 1), height: max(fb.height, 1)))
     }
 

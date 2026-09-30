@@ -1,7 +1,8 @@
 // smkvm-probe — headless live test: log in, open the KVM session, print the
 // protocol log, save the first complete frame as a PNG.
 //
-//   smkvm-probe <bmc> [user] [--seconds N] [--png out.png] [--no-keepalive] [--mouse-info-len N]
+//   smkvm-probe <bmc> [user] [--seconds N] [--png out.png] [--save-every S]
+//               [--no-keepalive] [--mouse-info-len N] [--power on|off|reset|softoff]
 //
 // The password comes from $SMKVM_PASSWORD or the same Keychain item the app
 // uses (service "smkvm.bmc", account "<user>@<bmc>").
@@ -28,6 +29,15 @@ let seconds = Double(option("--seconds") ?? "15") ?? 15
 let pngPath = option("--png") ?? "smkvm-probe.png"
 let noKeepAlive = flag("--no-keepalive")
 let mouseInfoLen = option("--mouse-info-len").flatMap(Int.init)
+let powerArg = option("--power")
+let power: PowerAction? = switch powerArg {
+case "on": .on
+case "off": .off
+case "reset": .reset
+case "softoff": .softOff
+default: nil
+}
+let savePeriod = Double(option("--save-every") ?? "0") ?? 0
 guard let host = args.first else {
     FileHandle.standardError.write(Data("usage: smkvm-probe <bmc> [user] [--seconds N] [--png file]\n".utf8))
     exit(2)
@@ -59,11 +69,13 @@ if let mouseInfoLen { client.mouseInfoLength = mouseInfoLen }
 client.log = { print("\(stamp()) \($0)") }
 
 nonisolated(unsafe) var frames = 0
-nonisolated(unsafe) var saved = false
+nonisolated(unsafe) var lastSave: Date?
 client.onFrame = { f in
     frames += 1
-    guard !saved, f.width > 0 else { return }
-    saved = true
+    guard f.width > 0 else { return }
+    // Save the first frame, then (with --save-every) refresh periodically.
+    if let lastSave, savePeriod <= 0 || Date().timeIntervalSince(lastSave) < savePeriod { return }
+    lastSave = Date()
     let data = f.pixels.withUnsafeBytes { Data($0) } as CFData
     let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
     if let provider = CGDataProvider(data: data),
@@ -79,6 +91,13 @@ client.onFrame = { f in
 }
 
 client.start()
+if let power {
+    // Give the session time to come up, then send the power command in-band.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+        print("\(stamp()) sending power \(powerArg ?? "")")
+        client.sendPower(power)
+    }
+}
 RunLoop.main.run(until: Date().addingTimeInterval(seconds))
 print("\(stamp()) frames delivered: \(frames)")
 client.stop()

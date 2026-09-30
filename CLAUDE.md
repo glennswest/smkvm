@@ -53,9 +53,10 @@ security type 16.
 
 ## Next
 
-- [ ] **Live test on server1** — blocked on the BMC password being in the
-  Keychain (`security add-generic-password -s smkvm.bmc -a ADMIN@192.168.11.10 -w`).
-  Run `swift run smkvm-probe 192.168.11.10`; settle the UNVERIFIED items:
+- [x] Live handshake on server1–8.g11.lo (X9 WPCM450) — login, JNLP,
+  auth, ServerInit, keep-alive all verified; see protocol.md "Live results".
+- [ ] **Live video/input test** — all eight hosts were powered off; needs a
+  powered-on host (owner to power one on). Then settle:
   0x37 length (2 vs 3, `--mouse-info-len`), 0x15 keep-alive acceptance
   (`--no-keepalive`), JNLP argument layout, wheel encoding (buttons bits 3/4).
 - [ ] AST2100 live test on an X10 board.
