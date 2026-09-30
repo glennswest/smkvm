@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-09-30
+- **docs:** API clients read the token from `SMKVM_API` in `~/.env`.
 - **perf:** Web API server rewritten on BSD sockets: the Network.framework (NWListener) version took ~2 s to deliver a 15 KB screenshot to a remote client (0.25 s to first byte), the kernel-socket version ~3 ms.
 - **fix:** A BMC that accepts the TCP connection but never completes the handshake (e.g. iDRAC still holding a previous VNC session) no longer leaves the console stuck on "connecting": handshakes time out (15 s ATEN, 20 s VNC) and the session retries.
 - **feat:** Web API and browser page on port 8765 (all interfaces), token-authenticated (`Authorization: Bearer` or `?token=`; token in `~/Library/Application Support/SMKVM/api-token`, shown by **Connection → Web API…**). Hosts and status, connect/disconnect, screen PNG/JPEG with wait-for-change, MJPEG live stream, type text, key chords, mouse, screen-log toggle and listing. No power control by design. See `docs/api.md`.

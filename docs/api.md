@@ -17,9 +17,12 @@ Every `/api` request needs the token, as `Authorization: Bearer <token>` or
 Web API…** shows and copies it. `/` (the browser page) needs no token itself
 and asks for it once.
 
+Clients keep it in their `~/.env` as `SMKVM_API` (set up on stormcentral
+for the `stormcentral` account, and in the owner's `~/.env` on the Mac):
+
 ```
-T=$(cat ~/Library/Application\ Support/SMKVM/api-token)
-curl -H "Authorization: Bearer $T" http://<mac>:8765/api/hosts
+set -a; . ~/.env; set +a
+curl -H "Authorization: Bearer $SMKVM_API" http://192.168.8.100:8765/api/hosts
 ```
 
 ## Endpoints

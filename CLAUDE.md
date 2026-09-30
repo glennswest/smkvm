@@ -74,8 +74,9 @@ security type 16.
   Live-verified from stormcentral 2026-09-30: server1 screen.png 30 ms,
   MJPEG ~8 fps, 401 without token, 409 on closed console. Server is BSD
   sockets (NWListener was ~2 s/15 KB to remote clients — don't go back).
-- [ ] Put the API token where the stormcentral Claude session can read it
-  (owner to say which account/path).
+- [x] API token distributed as `SMKVM_API` in `~/.env`: stormcentral
+  `/home/stormcentral/.env` (0600, the account Claude runs as) and the
+  owner's `~/.env` on the Mac. If the token is regenerated, update both.
 
 - [x] **Dell iDRAC support**: PowerEdge R230, iDRAC8 fw 2.86,
   Enterprise licence, 192.168.11.151. Dell's own console (5900) is
