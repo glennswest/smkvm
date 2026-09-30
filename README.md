@@ -144,6 +144,10 @@ MishaProductions/AtenKVMClient. SMKVM's decoders are independent
 implementations; the AST2100 quantisation tables are the ASPEED reference
 values those projects also use.
 
+## License
+
+MIT — see [`LICENSE`](LICENSE).
+
 ## Status
 
 Version 0.1.0 — early, but in daily use on the hardware above. See

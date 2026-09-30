@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-09-30
+- **chore:** MIT license.
 - **BREAKING:** Bundle identifier is now `io.github.glennswest.smkvm`; settings saved under the previous ID must be copied with `defaults export <old-id> - | defaults import io.github.glennswest.smkvm -`.
 - **docs:** README rewritten for public release (features, supported BMCs, credentials trade-off, iDRAC setup, web API, build, acknowledgements); lab-specific addresses removed from the repo.
 - **docs:** API clients read the token from `SMKVM_API` in `~/.env`.
