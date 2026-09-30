@@ -64,6 +64,13 @@ security type 16.
 
 ## Next
 
+- [ ] **Web API** (in progress): localhost-only HTTP server in the app
+  (127.0.0.1:8765, `HTTPServer` in core on NWListener, `APIController` in
+  the app routing to console windows on the main actor). Endpoints: hosts +
+  status, screen.png (with wait-for-change), type text, keys/chords, mouse,
+  power, connect/disconnect, screen-log listing; small HTML page at `/`.
+  Purpose: let Claude drive and watch consoles (input + output).
+
 - [x] **Dell iDRAC support**: PowerEdge R230, iDRAC8 fw 2.86,
   Enterprise licence, 192.168.11.151. Dell's own console (5900) is
   proprietary/encrypted; use the iDRAC's built-in **VNC server** instead
