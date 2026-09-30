@@ -28,8 +28,7 @@ Single source: `VERSION` (also stamped into the app's Info.plist by
   handshake, message parsing, video decoders, key mapping. No UI.
 - `Sources/SMKVM` — AppKit app: host library (HostStore/HostsWindow/HostEditor),
   tabbed console windows (ConsoleWindowController/ConsoleView), Keychain.
-- `KVMClient` is currently a stub with the final interface; the protocol
-  implementation replaces its bodies.
+- `Sources/smkvm-probe` — headless live-test CLI.
 - `Tests/SMKVMCoreTests` — decoder and parser tests.
 - `docs/protocol.md` — the ATEN protocol as implemented here.
 
@@ -42,23 +41,23 @@ security type 16.
 
 - [x] Scaffold
 - [x] Protocol spec (docs/protocol.md)
-- [ ] BMC HTTP login + session-key fetch
-- [ ] RFB/ATEN handshake
-- [ ] Hermon decoder (0x59/0x00, WPCM450 — server1)
-- [ ] AST2100 decoder (0x57 — X10 boards)
-- [ ] `smkvm-probe` CLI: login → handshake → first frame → PNG (live test tool)
-- [ ] HID key mapping, ATEN key/pointer messages, keep-alive, reconnect
+- [x] BMC HTTP login + session-key fetch
+- [x] RFB/ATEN handshake
+- [x] Hermon decoder (0x59/0x00, WPCM450 — server1)
+- [x] AST2100 decoder (0x57 — X10 boards; synthetic tests only)
+- [x] `smkvm-probe` CLI: login → handshake → first frame → PNG (live test tool)
+- [x] HID key mapping, ATEN key/pointer messages, keep-alive, reconnect
 - [x] Host library (multi-host), Keychain, tabbed consoles
 - [x] Console view + input capture (UI side)
-- [ ] App bundle script
+- [x] App bundle script
 
-## In progress (2026-09-30)
+## Next
 
-Implementing SMKVMCore protocol per docs/protocol.md §10: BMCWeb (login.cgi,
-jwsk JNLP, logout), Socket (blocking POSIX, TCP_NODELAY), KVMClient session
-thread, HermonDecoder, KeyMap. Then probe CLI and live test on server1;
-then AST2100.
-
-Open questions to settle live (see protocol.md UNVERIFIED): server msg 0x37
-length (2 vs 3), whether 0x15 keep-alive is accepted on 2010 firmware, JNLP
-argument layout, wheel encoding.
+- [ ] **Live test on server1** — blocked on the BMC password being in the
+  Keychain (`security add-generic-password -s smkvm.bmc -a ADMIN@192.168.11.10 -w`).
+  Run `swift run smkvm-probe 192.168.11.10`; settle the UNVERIFIED items:
+  0x37 length (2 vs 3, `--mouse-info-len`), 0x15 keep-alive acceptance
+  (`--no-keepalive`), JNLP argument layout, wheel encoding (buttons bits 3/4).
+- [ ] AST2100 live test on an X10 board.
+- [ ] KVM-over-TLS (stunnel) for later X9 firmware.
+- [ ] Virtual media (not started).

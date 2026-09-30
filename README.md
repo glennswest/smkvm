@@ -24,6 +24,25 @@ open build/SMKVM.app
 
 Requires macOS 14+ and Xcode / Swift 6.
 
+## Supported BMCs
+
+| BMC chip | Typical boards | Video |
+|---|---|---|
+| Nuvoton WPCM450 ("Hermon") | X8, most X9 | encoding 0x59 — supported |
+| ASPEED AST2100/2300/2400 | X10 | encoding 0x57 — supported (untested live) |
+
+Later X9 firmware that wraps the KVM port in TLS ("KVM SSL" on) is not
+supported yet; turn KVM SSL off in the BMC web UI.
+
+## Live test from the terminal
+
+```
+swift run smkvm-probe 192.168.11.10 ADMIN --seconds 15 --png server1.png
+```
+
+Uses `$SMKVM_PASSWORD` or the app's Keychain item. Prints the handshake and
+protocol log and saves the first frame.
+
 ## Status
 
-Early development — see `CHANGELOG.md`.
+Early development — see `CHANGELOG.md` and `docs/protocol.md`.
