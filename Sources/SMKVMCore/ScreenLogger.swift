@@ -48,13 +48,15 @@ public final class ScreenLogger: @unchecked Sendable {
         let blank = Self.isBlank(frame)
         lock.lock()
         defer { lock.unlock() }
-        if let prev = lastContent, prev.width != frame.width || prev.height != frame.height {
+        // For clears, save the settled screen from before content started to
+        // go (a clear can take more than one update); fall back to the latest.
+        if let prev = baseline ?? lastContent, prev.width != frame.width || prev.height != frame.height {
             save(prev, .modeChange)
             lastContent = nil
             baseline = nil
         }
         if blank {
-            if !lastWasBlank, let prev = lastContent { save(prev, .clear) }
+            if !lastWasBlank, let prev = baseline ?? lastContent { save(prev, .clear) }
             lastContent = nil
             baseline = nil
         } else {
@@ -93,7 +95,7 @@ public final class ScreenLogger: @unchecked Sendable {
 
     /// Caller holds `lock`.
     private func save(_ frame: FrameSnapshot, _ reason: Reason) {
-        if let last = lastSaved, Self.compare(last, frame) == .small { return }
+        if let last = lastSaved, Self.nearlyIdentical(last, frame) { return }
         lastSaved = frame
         let now = Date()
         writer.async { [directory, onSaved] in
@@ -140,13 +142,15 @@ public final class ScreenLogger: @unchecked Sendable {
 
     static let step = 4
 
-    /// How much of `old` survives in `new`, on a sampled grid. "Ink" is any
-    /// pixel that isn't the screen's background colour.
+    /// How much of `old`'s content survives in `new`, on a sampled grid.
+    /// "Ink" is any pixel that isn't the screen's background colour. Only
+    /// *removed* ink counts: text drawn onto empty background (a screen
+    /// still filling up) leaves the old content intact and is `.small`.
     static func compare(_ old: FrameSnapshot, _ new: FrameSnapshot) -> Change {
         guard old.width == new.width, old.height == new.height else { return .replaced }
         let w = old.width, h = old.height
-        let bgOld = background(old), bgNew = background(new)
-        var samples = 0, changed = 0, inkOld = 0, inkNew = 0
+        let bgOld = background(old)
+        var samples = 0, removed = 0, inkOld = 0, bgPainted = 0
         old.pixels.withUnsafeBufferPointer { a in
             new.pixels.withUnsafeBufferPointer { b in
                 var y = 0
@@ -154,25 +158,59 @@ public final class ScreenLogger: @unchecked Sendable {
                     var i = y * w
                     let end = i + w
                     while i < end {
-                        let p = a[i], q = b[i]
+                        let p = a[i]
                         samples += 1
-                        if p != q { changed += 1 }
-                        if p != bgOld { inkOld += 1 }
-                        if q != bgNew { inkNew += 1 }
+                        if p != bgOld {
+                            inkOld += 1
+                            if b[i] != p { removed += 1 }
+                        } else if b[i] != p {
+                            bgPainted += 1
+                        }
                         i += step
                     }
                     y += step
                 }
             }
         }
-        // Cursor blink, a typed character, a moved highlight.
-        if changed <= max(samples / 200, max(inkOld, inkNew) / 20) { return .small }
+        let worthKeeping = inkOld >= samples / 300
+        // Most of the old background painted over: a new screen is going up
+        // (e.g. POST → setup, where POST's grey text can match setup's grey
+        // panel, so the text alone doesn't look erased). Filling a screen
+        // with text covers far less than half its background.
+        if bgPainted * 2 >= samples - inkOld && !isScroll(old, new, bgOld) {
+            return worthKeeping ? .replaced : .small
+        }
+        // Old content intact apart from a cursor, a character, a highlight.
+        if removed <= max(samples / 400, inkOld / 10) { return .small }
         // Scrolling moves everything; it is never a replacement.
         if isScroll(old, new, bgOld) { return .scrolled }
-        // Most of what was on screen is gone or rewritten.
-        let ink = max(inkOld, inkNew, 1)
-        if Double(changed) >= Double(ink) * 0.5 && changed >= samples / 100 { return .replaced }
+        if removed * 2 >= inkOld {
+            // Barely anything was on screen: nothing worth keeping.
+            return worthKeeping ? .replaced : .small
+        }
         return .partial
+    }
+
+    /// Same screen for de-duplication: differs by no more than a cursor.
+    static func nearlyIdentical(_ a: FrameSnapshot, _ b: FrameSnapshot) -> Bool {
+        guard a.width == b.width, a.height == b.height else { return false }
+        var samples = 0, changed = 0
+        a.pixels.withUnsafeBufferPointer { p in
+            b.pixels.withUnsafeBufferPointer { q in
+                var y = 0
+                while y < a.height {
+                    var i = y * a.width
+                    let end = i + a.width
+                    while i < end {
+                        samples += 1
+                        if p[i] != q[i] { changed += 1 }
+                        i += step
+                    }
+                    y += step
+                }
+            }
+        }
+        return changed <= samples / 400
     }
 
     /// True when `new` is `old` moved up by some whole number of pixel rows

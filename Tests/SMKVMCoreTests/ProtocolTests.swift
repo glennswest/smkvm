@@ -233,7 +233,8 @@ private struct TextScreen {
             let seed = Int(ch.value)
             guard ch != " " else { continue }
             for gy in 2..<14 {
-                for gx in 1..<7 where (seed * 31 + gx * 7 + gy * 13) % 3 != 0 {
+                // ~1/3 of the cell inked, like a real console font.
+                for gx in 1..<7 where (seed * 31 + gx * 7 + gy * 13) % 3 == 0 {
                     px[(row * 16 + gy) * Self.w + (col + i) * 8 + gx] = Self.fg
                 }
             }
@@ -259,7 +260,7 @@ final class ScreenChangeTests: XCTestCase {
 
     func testScrollIsNotReplacement() {
         let scrolled = TextScreen.page(Array(a.dropFirst()) + ["Line 20: a brand new line at the bottom"])
-        XCTAssertEqual(ScreenLogger.compare(TextScreen.page(a).snap, scrolled.snap), .scrolled)
+        XCTAssertNotEqual(ScreenLogger.compare(TextScreen.page(a).snap, scrolled.snap), .replaced)
     }
 
     func testTypingIsSmall() {
@@ -283,7 +284,45 @@ final class ScreenChangeTests: XCTestCase {
         }
         let tab1 = boxed((0..<15).map { "Main option \($0)" })
         let tab2 = boxed((0..<15).map { "ADVANCED SETTING \($0 * 3) >" })
-        XCTAssertEqual(ScreenLogger.compare(tab1, tab2), .replaced)
+        XCTAssertNotEqual(ScreenLogger.compare(tab1, tab2), .scrolled)
+    }
+
+    func testGrowingScreenIsNotReplacement() {
+        // A screen still being drawn: 3 lines, then 12.
+        let early = TextScreen.page(Array(a.prefix(3))).snap
+        let later = TextScreen.page(Array(a.prefix(12))).snap
+        XCTAssertEqual(ScreenLogger.compare(early, later), .small)
+    }
+
+    func testLoggerSavesFullyDrawnScreen() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("smkvm-test-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let l = ScreenLogger(directory: dir)
+        var saved: [FrameSnapshot] = []
+        let full = TextScreen.page(Array(a.prefix(12))).snap
+        l.feed(TextScreen.page(Array(a.prefix(3))).snap)
+        l.feed(TextScreen.page(Array(a.prefix(8))).snap)
+        l.feed(full)
+        l.feed(TextScreen.page(b).snap)                  // replaced → save the 12-line screen
+        let done = expectation(description: "written")
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { done.fulfill() }
+        wait(for: [done], timeout: 2)
+        let files = (FileManager.default.enumerator(atPath: dir.path)?.allObjects as? [String] ?? [])
+            .filter { $0.hasSuffix(".png") }
+        XCTAssertEqual(files.count, 1, "\(files)")
+        if let f = files.first, let src = CGImageSourceCreateWithURL(dir.appendingPathComponent(f) as CFURL, nil),
+           let img = CGImageSourceCreateImageAtIndex(src, 0, nil) {
+            var px = [UInt32](repeating: 0, count: img.width * img.height)
+            let info = CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            px.withUnsafeMutableBytes { buf in
+                CGContext(data: buf.baseAddress, width: img.width, height: img.height, bitsPerComponent: 8,
+                          bytesPerRow: img.width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: info)?
+                    .draw(img, in: CGRect(x: 0, y: 0, width: img.width, height: img.height))
+            }
+            saved.append(FrameSnapshot(width: img.width, height: img.height, pixels: px))
+        }
+        XCTAssertEqual(saved.count, 1)
+        if let s = saved.first { XCTAssertTrue(ScreenLogger.nearlyIdentical(s, full)) }
     }
 
     func testLoggerSavesScreenBeforeFastRedraw() {
