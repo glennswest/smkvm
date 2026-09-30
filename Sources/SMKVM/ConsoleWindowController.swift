@@ -46,7 +46,29 @@ final class ConsoleWindowController: NSWindowController, NSWindowDelegate {
 
     func sendCtrlAltDel() { client.sendCtrlAltDel() }
 
-    private func frame(_ fb: Framebuffer) {
+    func sendKey(_ hid: UInt8) { client.sendChord([hid]) }
+
+    /// Power actions other than "on" ask first — they hit a live machine.
+    func power(_ action: PowerAction, title: String) {
+        guard let window else { return }
+        if action == .on { client.sendPower(action); return }
+        let alert = NSAlert()
+        alert.messageText = "\(title) \(host.title)?"
+        alert.informativeText = "This acts on the server immediately, like pressing its power or reset button."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: title)
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [client] r in
+            if r == .alertFirstButtonReturn { client.sendPower(action) }
+        }
+    }
+
+    func windowDidResignKey(_ note: Notification) {
+        // Don't leave keys stuck down on the host when focus moves away.
+        client.releaseAll()
+    }
+
+    private func frame(_ fb: FrameSnapshot) {
         view.show(fb)
         // First frame (and resolution changes): size the window to 1:1 if it fits.
         let size = NSSize(width: fb.width, height: fb.height)

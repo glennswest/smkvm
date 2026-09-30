@@ -25,13 +25,13 @@ final class ConsoleView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     /// Called on the main thread with a snapshot of the framebuffer.
-    func show(_ fb: Framebuffer) {
+    func show(_ fb: FrameSnapshot) {
         fbSize = CGSize(width: fb.width, height: fb.height)
         image = Self.makeImage(fb)
         needsDisplay = true
     }
 
-    private static func makeImage(_ fb: Framebuffer) -> CGImage? {
+    private static func makeImage(_ fb: FrameSnapshot) -> CGImage? {
         guard fb.width > 0, fb.height > 0 else { return nil }
         let data = fb.pixels.withUnsafeBytes { Data($0) }
         guard let provider = CGDataProvider(data: data as CFData) else { return nil }
