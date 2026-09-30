@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-09-30
+- **feat:** `--connect <host>` launch argument opens a saved host's console.
 - **fix:** Screen-off no longer spins: the BMC answers each update request immediately with a screen-off rect, so polling now runs from the 1 s timer only.
 - **feat:** `smkvm-probe --power on|off|reset|softoff` and `--save-every S`.
 - **docs:** Live handshake results from server1–8 (X9 WPCM450) recorded in protocol.md.

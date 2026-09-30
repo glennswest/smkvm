@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.mainMenu = makeMenu()
         showHosts(nil)
+        connectFromArguments()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -17,6 +18,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationShouldHandleReopen(_ app: NSApplication, hasVisibleWindows: Bool) -> Bool {
         if !hasVisibleWindows { showHosts(nil) }
         return true
+    }
+
+    /// `--connect <name|address>` (repeatable) opens consoles at launch.
+    private func connectFromArguments() {
+        let args = ProcessInfo.processInfo.arguments
+        for (i, a) in args.enumerated() where a == "--connect" && i + 1 < args.count {
+            let want = args[i + 1]
+            if let h = HostStore.shared.hosts.first(where: { $0.address == want || $0.name == want }) {
+                open(h)
+            }
+        }
     }
 
     @objc func showHosts(_ sender: Any?) {

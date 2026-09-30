@@ -13,6 +13,8 @@ to the BMC's ATEN-flavoured VNC service on port 5900.
   IPMI user and password (stored in the macOS Keychain).
 - Double-click a host, or select several and press Connect. Each console
   opens as a tab; drag a tab out for its own window.
+- `open SMKVM.app --args --connect server1` opens a saved host's console at
+  launch (by name or address; repeatable).
 - **Keys → Send Ctrl-Alt-Del** for the combos macOS would otherwise eat.
 
 ## Build
