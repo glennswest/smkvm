@@ -81,6 +81,26 @@ repo is public) — never commit them.
 
 ## Next
 
+- [ ] **JetKVM support** (IN PROGRESS 2026-10-27) — third console type
+      `jetkvm`: local-auth login (`POST /auth/login-local` → authToken
+      cookie), WebRTC signaling over `GET /webrtc/signaling/client`
+      (offer/answer as base64 JSON SDP + trickle ICE), H.264 video track
+      decoded into the existing Framebuffer/FrameSnapshot pipeline (so
+      ConsoleView, ScreenLogger and the web API work unchanged), input as
+      JSON-RPC over the `rpc` data channel (`keyboardReport`,
+      `absMouseReport` 0–32767, `wheelReport`), power via
+      `setATXPowerAction` (needs the ATX extension). WebRTC stack:
+      stasel/WebRTC (packaged libwebrtc) pinned at 154.0.0;
+      `scripts/bundle.sh` embeds the framework. Probe gains a jetkvm mode
+      for the headless live test. Steps:
+      - [ ] Package.swift: WebRTC dependency
+      - [ ] SMKVMCore: JetKVMWeb (login + signaling WS) + JetKVMSession
+            (peer connection, renderer → Framebuffer, input RPC)
+      - [ ] KVMClient: `.jetkvm` ConsoleKind (connect loop, input routing)
+      - [ ] Host model + HostEditor third type (no user field)
+      - [ ] bundle.sh framework embed
+      - [ ] smkvm-probe `--jetkvm` headless live test, verified on-device
+      - [ ] docs/jetkvm.md + README; v1.1.0
 - [ ] Settle remaining UNVERIFIED protocol items (docs/protocol.md): 0x37
   length (2 vs 3, `--mouse-info-len`), wheel encoding (buttons bits 3/4),
   mouse on ATEN.
