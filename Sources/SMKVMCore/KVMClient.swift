@@ -41,6 +41,9 @@ public enum ConsoleKind: Sendable, Equatable {
     /// A standard VNC server (e.g. Dell iDRAC's built-in one) on `port`,
     /// VNC password authentication.
     case vnc(port: Int)
+    /// JetKVM: local-auth login on port 80, WebRTC console (H.264 video,
+    /// JSON-RPC HID input). `user` is unused — the device has one password.
+    case jetkvm
 }
 
 /// One KVM session to one BMC. ATEN: HTTP login → session key → ATEN RFB;
@@ -72,6 +75,7 @@ public final class KVMClient: @unchecked Sendable {
     private let lock = NSLock()
     private var running = false
     private var socket: Socket?
+    private var jet: JetKVMSession?       // lock
     private var thread: Thread?
     private var timer: DispatchSourceTimer?
 
@@ -111,8 +115,10 @@ public final class KVMClient: @unchecked Sendable {
         lock.lock()
         running = false
         let s = socket
+        let j = jet
         lock.unlock()
         s?.shutdown()
+        j?.close()
     }
 
     var isRunning: Bool {
@@ -158,6 +164,8 @@ public final class KVMClient: @unchecked Sendable {
                         s.setReadTimeout(0)
                         try runConnected { try vncReadLoop(s) }
                     }
+                case .jetkvm:
+                    try runJetKVM()
                 }
                 failures = 0
             } catch {
@@ -167,6 +175,7 @@ public final class KVMClient: @unchecked Sendable {
                 status("\(error)")
                 if let e = error as? BMCWebError, case .loginFailed = e { web?.logout(); break }
                 if let k = error as? KVMError, k.isFatal { web?.logout(); break }
+                if let j = error as? JetKVMError, j.isFatal { break }
             }
             web?.logout()
             guard isRunning else { break }
@@ -208,6 +217,33 @@ public final class KVMClient: @unchecked Sendable {
         lastRx = Date()
         startTimer()
         try loop()
+    }
+
+    // MARK: JetKVM session
+
+    /// Runs one JetKVM WebRTC session; blocks until it ends (the outer loop
+    /// reconnects). The session feeds `fb` and `deliver()` directly, so the
+    /// view, ScreenLogger and web API work exactly as for the socket kinds.
+    private func runJetKVM() throws {
+        let session = JetKVMSession(host: host, password: password, fb: fb,
+                                    onUpdate: { [weak self] in self?.deliver() },
+                                    onStatus: { [weak self] s in self?.status(s) })
+        session.log = log
+        lock.lock()
+        jet = session
+        let stillRunning = running
+        lock.unlock()
+        defer {
+            screenLogger?.sessionEnded()
+            lock.lock(); jet = nil; lock.unlock()
+        }
+        guard stillRunning else { return }
+        try session.run()
+    }
+
+    private var currentJet: JetKVMSession? {
+        lock.lock(); defer { lock.unlock() }
+        return jet
     }
 
     // MARK: ATEN session
@@ -423,7 +459,13 @@ public final class KVMClient: @unchecked Sendable {
     public func sendHID(_ hid: UInt8, down: Bool) {
         lock.lock()
         if down { heldKeys.insert(hid) } else { heldKeys.remove(hid) }
+        let held = heldKeys
         lock.unlock()
+        if case .jetkvm = kind {
+            // JetKVM takes the whole keyboard state, not key transitions.
+            currentJet?.sendKeyboard(held: held)
+            return
+        }
         send(keyMessage(hid, down))
     }
 
@@ -434,6 +476,8 @@ public final class KVMClient: @unchecked Sendable {
         case .vnc:
             guard let sym = KeySyms.keysym(forHID: hid) else { return [] }
             return [4, down ? 1 : 0, 0, 0] + ATENMessages.be32(sym)
+        case .jetkvm:
+            return []   // JetKVM input goes through sendHID/currentJet
         }
     }
 
@@ -452,6 +496,12 @@ public final class KVMClient: @unchecked Sendable {
         switch kind {
         case .aten: send(ATENMessages.pointer(x: x, y: y, buttons: buttons))
         case .vnc: send([5, buttons] + ATENMessages.be16(max(0, x)) + ATENMessages.be16(max(0, y)))
+        case .jetkvm:
+            guard let jet = currentJet else { return }
+            // RFB wheel bits become wheel reports; the rest is an absolute move.
+            if buttons & 8 != 0 { jet.sendWheel(1) }
+            if buttons & 16 != 0 { jet.sendWheel(-1) }
+            jet.sendAbsMouse(x: x, y: y, rfbButtons: buttons & 0x7)
         }
     }
 
@@ -461,15 +511,29 @@ public final class KVMClient: @unchecked Sendable {
         let keys = heldKeys
         heldKeys.removeAll()
         lock.unlock()
+        if case .jetkvm = kind {
+            currentJet?.sendKeyboard(held: [])
+            return
+        }
         keys.forEach { send(keyMessage($0, false)) }
     }
 
     /// ATEN: in-band power message. VNC hosts: Redfish, with the host's
-    /// web credentials. Errors are reported through `onStatus`.
+    /// web credentials. JetKVM: ATX extension button presses (on/soft-off
+    /// are a short press, off a 5 s hold). Errors are reported through
+    /// `onStatus`.
     public func sendPower(_ action: PowerAction) {
         switch kind {
         case .aten:
             send(ATENMessages.power(action.rawValue))
+        case .jetkvm:
+            let atx: String
+            switch action {
+            case .on, .softOff: atx = "power-short"
+            case .off: atx = "power-long"
+            case .reset: atx = "reset"
+            }
+            currentJet?.sendATXPower(atx)
         case .vnc:
             guard let rf = Redfish(host: host, user: user, password: password) else { return }
             Task { [self] in

@@ -9,12 +9,19 @@ struct Host: Codable, Equatable, Identifiable {
     var user: String
     /// Save a PNG of the screen each time it is cleared (ScreenLogger).
     var logScreens = false
-    /// "aten" (Supermicro iKVM) or "vnc" (standard VNC, e.g. Dell iDRAC).
+    /// "aten" (Supermicro iKVM), "vnc" (standard VNC, e.g. Dell iDRAC) or
+    /// "jetkvm" (WebRTC console, password-only login).
     var type = "aten"
     /// VNC server port (iDRAC's built-in VNC server defaults to 5901).
     var vncPort = 5901
 
-    var consoleKind: ConsoleKind { type == "vnc" ? .vnc(port: vncPort) : .aten }
+    var consoleKind: ConsoleKind {
+        switch type {
+        case "vnc": return .vnc(port: vncPort)
+        case "jetkvm": return .jetkvm
+        default: return .aten
+        }
+    }
 
     var title: String { name.isEmpty ? address : name }
 

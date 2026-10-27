@@ -32,12 +32,13 @@ final class HostEditor: NSWindowController {
         nameField.stringValue = host.name
         addressField.stringValue = host.address
         userField.stringValue = host.user
-        typePopup.addItems(withTitles: ["Supermicro (ATEN iKVM)", "VNC (Dell iDRAC, others)"])
-        typePopup.selectItem(at: host.type == "vnc" ? 1 : 0)
+        typePopup.addItems(withTitles: ["Supermicro (ATEN iKVM)", "VNC (Dell iDRAC, others)", "JetKVM"])
+        typePopup.selectItem(at: host.type == "vnc" ? 1 : host.type == "jetkvm" ? 2 : 0)
         typePopup.target = self
         typePopup.action = #selector(typeChanged)
         portField.stringValue = String(host.vncPort)
         portField.isEnabled = host.type == "vnc"
+        userField.isEnabled = host.type != "jetkvm"   // JetKVM has one password, no user
         if !isNew {
             passField.stringValue = PasswordStore.password(host: host.address, user: host.user) ?? ""
         } else if let last = HostEditor.lastSaved {
@@ -75,17 +76,21 @@ final class HostEditor: NSWindowController {
     }
 
     @objc private func typeChanged() {
-        portField.isEnabled = typePopup.indexOfSelectedItem == 1
+        let index = typePopup.indexOfSelectedItem
+        portField.isEnabled = index == 1
+        userField.isEnabled = index != 2
     }
 
     @objc private func ok() {
+        let types = ["aten", "vnc", "jetkvm"]
+        let type = types[max(0, min(types.count - 1, typePopup.indexOfSelectedItem))]
         let address = addressField.stringValue.trimmingCharacters(in: .whitespaces)
-        let user = userField.stringValue.trimmingCharacters(in: .whitespaces)
-        guard !address.isEmpty, !user.isEmpty else { NSSound.beep(); return }
+        let user = type == "jetkvm" ? "" : userField.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !address.isEmpty, !user.isEmpty || type == "jetkvm" else { NSSound.beep(); return }
         host.name = nameField.stringValue.trimmingCharacters(in: .whitespaces)
         host.address = address
         host.user = user
-        host.type = typePopup.indexOfSelectedItem == 1 ? "vnc" : "aten"
+        host.type = type
         host.vncPort = Int(portField.stringValue) ?? 5901
         PasswordStore.save(host: address, user: user, password: passField.stringValue)
         HostEditor.lastSaved = (user, passField.stringValue)
