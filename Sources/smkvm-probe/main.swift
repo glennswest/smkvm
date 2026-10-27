@@ -4,6 +4,7 @@
 //   smkvm-probe <bmc> [user] [--seconds N] [--png out.png] [--save-every S]
 //               [--no-keepalive] [--mouse-info-len N] [--power on|off|reset|softoff]
 //               [--vnc PORT]   (standard VNC server instead of ATEN iKVM)
+//               [--jetkvm]     (JetKVM WebRTC console; user is unused)
 //               [--tap-hid HEX] (tap one key, as a USB HID usage, 2 s after the first frame; e.g. e1 = Shift)
 //
 // The password comes from $SMKVM_PASSWORD or the app's password file
@@ -40,12 +41,13 @@ default: nil
 }
 let savePeriod = Double(option("--save-every") ?? "0") ?? 0
 let vncPort = option("--vnc").flatMap(Int.init)
+let jetkvm = flag("--jetkvm")
 let tapKey = option("--tap-hid").flatMap { UInt8($0.replacingOccurrences(of: "0x", with: ""), radix: 16) }
 guard let host = args.first else {
     FileHandle.standardError.write(Data("usage: smkvm-probe <bmc> [user] [--seconds N] [--png file]\n".utf8))
     exit(2)
 }
-let user = args.count > 1 ? args[1] : "ADMIN"
+let user = args.count > 1 ? args[1] : (jetkvm ? "" : "ADMIN")
 
 guard let password = ProcessInfo.processInfo.environment["SMKVM_PASSWORD"] ?? PasswordStore.password(host: host, user: user) else {
     print("no password: set SMKVM_PASSWORD or save \(user)@\(host) in the app (\(PasswordStore.file.path))")
@@ -56,7 +58,7 @@ let start = Date()
 func stamp() -> String { String(format: "%7.3f", Date().timeIntervalSince(start)) }
 
 let client = KVMClient(host: host, user: user, password: password,
-                       kind: vncPort.map { .vnc(port: $0) } ?? .aten)
+                       kind: jetkvm ? .jetkvm : vncPort.map { .vnc(port: $0) } ?? .aten)
 client.keepAliveEnabled = !noKeepAlive
 if let mouseInfoLen { client.mouseInfoLength = mouseInfoLen }
 client.log = { print("\(stamp()) \($0)") }
