@@ -185,7 +185,17 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
             if let token = r.authToken { return token }
         }
 
-        guard !password.isEmpty else { return nil }
+        guard !password.isEmpty else {
+            // No password means noPassword mode — but if the device is in
+            // password mode, say so now instead of letting the signaling
+            // socket fail with an opaque "bad response".
+            if let probe = try? request(path: "/device", method: "GET", body: nil),
+               probe.code == 401 {
+                throw JetKVMError.loginFailed(
+                    "the device has a password — edit this host and enter it")
+            }
+            return nil
+        }
         let r = try request(path: "/auth/login-local", method: "POST",
                             body: ["password": password])
         guard r.code == 200 else {

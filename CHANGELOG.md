@@ -3,6 +3,15 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v1.1.1] — 2026-10-27
+
+### Fixed
+- **JetKVM host saved with an empty password** now fails with "the device
+  has a password — edit this host and enter it" instead of the opaque
+  "signaling: there was a bad response" from the rejected WebSocket
+  upgrade (an empty password means noPassword mode; the device is probed
+  to tell the two apart).
+
 ## [v1.1.0] — 2026-10-27
 
 ### Added
