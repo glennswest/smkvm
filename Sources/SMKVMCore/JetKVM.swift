@@ -89,6 +89,8 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
     private var pc: RTCPeerConnection?
     private var rpc: RTCDataChannel?
     private var renderer: JetKVMRenderer?
+    // The track wrapper must stay alive: its dealloc detaches the renderer.
+    private var videoTrack: RTCVideoTrack?
     private var timer: DispatchSourceTimer?
 
     private static let sslOnce: Void = { RTCInitializeSSL() }()
@@ -148,6 +150,8 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
         t?.cancel()
         ws?.cancel(with: .normalClosure, reason: nil)
         rpc?.close()
+        if let r = renderer { videoTrack?.remove(r) }
+        videoTrack = nil
         pc?.close()
         pc = nil
         factory = nil
@@ -399,6 +403,7 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
         for t in pc.transceivers {
             if let track = t.receiver.track as? RTCVideoTrack {
                 track.add(r)
+                lock.lock(); videoTrack = track; lock.unlock()
                 log?("video track attached (\(track.trackId))")
             }
         }
@@ -422,6 +427,7 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
             tick += 1
             self.rpcCall("ping", params: nil)
             if tick % 4 == 0 { self.wsPing() }
+            if tick % 2 == 0 { self.logInboundStats() }
             self.lock.lock()
             let up = self.iceConnected
             self.lock.unlock()
@@ -431,6 +437,30 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
         }
         lock.lock(); timer = t; lock.unlock()
         t.resume()
+    }
+
+    /// Logs the inbound video RTP/decoder counters — the first place to look
+    /// when the session is up but no frames arrive.
+    private func logInboundStats() {
+        guard let pc, log != nil else { return }
+        pc.statistics { [weak self] report in
+            guard let self else { return }
+            for s in report.statistics.values where s.type == "inbound-rtp" {
+                let v = s.values
+                guard v["kind"] as? String == "video" else { continue }
+                let n = { (key: String) in (v[key] as? NSNumber)?.intValue ?? 0 }
+                let packets = n("packetsReceived")
+                let frames = n("framesDecoded")
+                let key = n("keyFramesDecoded")
+                let dropped = n("framesDropped")
+                let decoder = v["decoderImplementation"] as? String ?? "?"
+                let codec = (v["codecId"] as? String).flatMap {
+                    (report.statistics[$0]?.values["mimeType"]) as? String
+                } ?? "?"
+                self.log?("inbound video: \(codec) packets \(packets) framesDecoded \(frames) " +
+                          "key \(key) dropped \(dropped) decoder \(decoder)")
+            }
+        }
     }
 
     private func wsPing() {
