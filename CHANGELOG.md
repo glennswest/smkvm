@@ -3,6 +3,18 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v1.1.2] — 2026-10-27
+
+### Fixed
+- **Console sluggish on JetKVM (60 fps) consoles.** Three fixes:
+  the view now hands frames to Core Animation (`layer.contents`, GPU
+  scaling) instead of a CPU CoreGraphics blit into the Retina backing
+  store on every frame; move-only mouse reports are coalesced to ~125 Hz
+  with a trailing flush (macOS delivers mouseMoved at the mouse's polling
+  rate, and flooding the device's HID queue lagged the cursor); the
+  screen logger, when enabled, analyses at most 10 frames/s on JetKVM
+  consoles instead of all 60.
+
 ## [v1.1.1] — 2026-10-27
 
 ### Fixed

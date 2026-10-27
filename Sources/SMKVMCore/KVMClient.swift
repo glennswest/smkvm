@@ -362,10 +362,19 @@ public final class KVMClient: @unchecked Sendable {
 
     let ast = AST2100Decoder()
 
+    private var lastLoggerFeed = Date.distantPast   // delivery thread only
+
     /// Hands the newest frame to the UI, coalescing if the UI is behind.
     func deliver() {
         let snap = fb.snapshot()
-        screenLogger?.feed(snap)
+        if let logger = screenLogger {
+            // A 60 fps console (JetKVM) would spend more on screen-change
+            // analysis than on video; 10 Hz still catches settled screens.
+            if kind != .jetkvm || Date().timeIntervalSince(lastLoggerFeed) >= 0.1 {
+                lastLoggerFeed = Date()
+                logger.feed(snap)
+            }
+        }
         lock.lock()
         latest = snap
         current = snap

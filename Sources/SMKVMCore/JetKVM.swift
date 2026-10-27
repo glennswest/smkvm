@@ -82,6 +82,9 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
     private var rpcID = 0
     private var videoStateID = 0
     private(set) var framesPainted = 0
+    private var lastMoveAt = Date.distantPast      // lock
+    private var lastSentButtons: UInt8 = 0         // lock
+    private var pendingMove: (Int, Int, UInt8)?    // lock
 
     private var urlSession: URLSession!
     private var ws: URLSessionWebSocketTask?
@@ -523,13 +526,42 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
     }
 
     /// x/y in framebuffer coordinates, buttons RFB-style without wheel bits.
+    /// Move-only reports are coalesced to ~125 Hz (macOS delivers mouseMoved
+    /// at the mouse's polling rate; flooding the device's HID queue lags the
+    /// cursor); button changes always go out immediately, and a trailing
+    /// flush lands the final position.
     func sendAbsMouse(x: Int, y: Int, rfbButtons: UInt8) {
-        let w = fb.width, h = fb.height
-        rpcCall("absMouseReport", params: [
-            "x": JetKVMInput.absCoord(x, extent: w),
-            "y": JetKVMInput.absCoord(y, extent: h),
-            "buttons": Int(JetKVMInput.hidButtons(rfb: rfbButtons)),
-        ])
+        let hx = JetKVMInput.absCoord(x, extent: fb.width)
+        let hy = JetKVMInput.absCoord(y, extent: fb.height)
+        let hb = JetKVMInput.hidButtons(rfb: rfbButtons)
+        let now = Date()
+        lock.lock()
+        if hb == lastSentButtons && now.timeIntervalSince(lastMoveAt) < 0.008 {
+            let flushScheduled = pendingMove != nil
+            pendingMove = (hx, hy, hb)
+            lock.unlock()
+            if !flushScheduled {
+                DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.01) { [weak self] in
+                    self?.flushPendingMove()
+                }
+            }
+            return
+        }
+        lastSentButtons = hb
+        lastMoveAt = now
+        pendingMove = nil
+        lock.unlock()
+        rpcCall("absMouseReport", params: ["x": hx, "y": hy, "buttons": Int(hb)])
+    }
+
+    private func flushPendingMove() {
+        lock.lock()
+        guard let (hx, hy, hb) = pendingMove else { lock.unlock(); return }
+        pendingMove = nil
+        lastSentButtons = hb
+        lastMoveAt = Date()
+        lock.unlock()
+        rpcCall("absMouseReport", params: ["x": hx, "y": hy, "buttons": Int(hb)])
     }
 
     func sendWheel(_ wheelY: Int) {

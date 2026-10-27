@@ -27,7 +27,7 @@ public enum JetKVMDiscovery {
             memcpy(&sin, sa, MemoryLayout<sockaddr_in>.size)
             var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
             guard inet_ntop(AF_INET, &sin.sin_addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil else { continue }
-            let ip = String(cString: buf)
+            let ip = buf.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
             let prefix = ip.split(separator: ".").prefix(3).joined(separator: ".")
             // Link-local means no DHCP happened; nothing to find there.
             guard !ip.hasPrefix("169.254."), !result.contains(prefix) else { continue }

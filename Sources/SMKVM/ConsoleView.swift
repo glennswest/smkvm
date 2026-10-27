@@ -20,6 +20,10 @@ final class ConsoleView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
+        // The frame is shown as the layer's contents so Core Animation does
+        // the scaling on the GPU. A CPU draw(_:) blit into a Retina backing
+        // store cannot keep up with a 60 fps console (JetKVM).
+        layer?.contentsGravity = .resizeAspect
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -28,7 +32,7 @@ final class ConsoleView: NSView {
     func show(_ fb: FrameSnapshot) {
         fbSize = CGSize(width: fb.width, height: fb.height)
         image = Self.makeImage(fb)
-        needsDisplay = true
+        layer?.contents = image
     }
 
     private static func makeImage(_ fb: FrameSnapshot) -> CGImage? {
@@ -50,20 +54,6 @@ final class ConsoleView: NSView {
         let s = min(bounds.width / fbSize.width, bounds.height / fbSize.height)
         let w = fbSize.width * s, h = fbSize.height * s
         return CGRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.black.setFill()
-        dirtyRect.fill()
-        guard let image, let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let r = imageRect
-        ctx.saveGState()
-        // CGContext draws images bottom-up; flip back since the view is flipped.
-        ctx.translateBy(x: 0, y: r.maxY + r.minY)
-        ctx.scaleBy(x: 1, y: -1)
-        ctx.interpolationQuality = .medium
-        ctx.draw(image, in: r)
-        ctx.restoreGState()
     }
 
     // MARK: - Mouse
