@@ -80,6 +80,7 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
     private var iceConnected = false
     private var pendingCandidates: [RTCIceCandidate] = []
     private var rpcID = 0
+    private var videoStateID = 0
     private(set) var framesPainted = 0
 
     private var urlSession: URLSession!
@@ -440,17 +441,38 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
 
     // MARK: JSON-RPC over the data channel
 
-    private func rpcCall(_ method: String, params: [String: Any]?) {
+    @discardableResult
+    private func rpcCall(_ method: String, params: [String: Any]?) -> Int {
         lock.lock()
         rpcID += 1
         let id = rpcID
         let channel = rpc
         lock.unlock()
-        guard let channel, channel.readyState == .open else { return }
+        guard let channel, channel.readyState == .open else { return id }
         var obj: [String: Any] = ["jsonrpc": "2.0", "method": method, "id": id]
         if let params { obj["params"] = params }
-        guard let data = try? JSONSerialization.data(withJSONObject: obj) else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: obj) else { return id }
         channel.sendData(RTCDataBuffer(data: data, isBinary: false))
+        return id
+    }
+
+    /// The HDMI input's state, from the videoInputState event or a
+    /// getVideoState reply: drives the "no signal" status.
+    private func handleVideoState(_ p: [String: Any]) {
+        let error = p["error"] as? String ?? ""
+        let ready = p["ready"] as? Bool ?? false
+        if ready && error.isEmpty {
+            let w = (p["width"] as? NSNumber)?.intValue ?? 0
+            let h = (p["height"] as? NSNumber)?.intValue ?? 0
+            let fps = (p["fps"] as? NSNumber)?.doubleValue ?? 0
+            log?("video input \(w)x\(h) @ \(Int(fps)) fps")
+            lock.lock()
+            let painted = framesPainted > 0
+            lock.unlock()
+            onStatus(painted ? "connected" : "connecting")
+        } else {
+            onStatus("no video: \(error.isEmpty ? "input not ready" : error.replacingOccurrences(of: "_", with: " "))")
+        }
     }
 
     // MARK: input (called from KVMClient, any thread)
@@ -634,6 +656,13 @@ extension JetKVMSession: RTCPeerConnectionDelegate {
 extension JetKVMSession: RTCDataChannelDelegate {
     func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
         log?("data channel \(dataChannel.label) state \(dataChannel.readyState.rawValue)")
+        guard dataChannel.readyState == .open else { return }
+        // Ask for the input state up front; with no HDMI signal there will
+        // never be a frame, and the status should say why.
+        let id = rpcCall("getVideoState", params: nil)
+        lock.lock()
+        videoStateID = id
+        lock.unlock()
     }
 
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
@@ -641,12 +670,24 @@ extension JetKVMSession: RTCDataChannelDelegate {
               let obj = try? JSONSerialization.jsonObject(with: buffer.data),
               let dict = obj as? [String: Any] else { return }
         if let method = dict["method"] as? String {
-            if method == "otherSessionConnected" {
+            switch method {
+            case "otherSessionConnected":
                 end(JetKVMError.takenOver)
-            } else {
+            case "videoInputState":
+                handleVideoState(dict["params"] as? [String: Any] ?? [:])
+            default:
                 log?("rpc event \(method)")
             }
             return
+        }
+        if let id = (dict["id"] as? NSNumber)?.intValue {
+            lock.lock()
+            let isVideoState = id == videoStateID
+            lock.unlock()
+            if isVideoState, let result = dict["result"] as? [String: Any] {
+                handleVideoState(result)
+                return
+            }
         }
         if let error = dict["error"] {
             log?("rpc error: \(error)")
