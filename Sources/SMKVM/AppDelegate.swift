@@ -45,6 +45,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         hostsWindow?.addHost()
     }
 
+    /// Sweeps the local subnets for JetKVMs and offers to add the new ones,
+    /// sharing one password (a factory-fresh device is set up with it on
+    /// first connect). Needs no mDNS or DNS infrastructure.
+    @objc func discoverJetKVMs(_ sender: Any?) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let devices = JetKVMDiscovery.scan()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { [weak self] in self?.presentDiscovered(devices) }
+            }
+        }
+    }
+
+    private func presentDiscovered(_ devices: [JetKVMDiscovery.Device]) {
+        showHosts(nil)
+        let alert = NSAlert()
+        guard !devices.isEmpty else {
+            alert.messageText = "No JetKVMs found"
+            alert.informativeText = "Swept the local networks; no device answered like a JetKVM."
+            alert.runModal()
+            return
+        }
+        let fresh = devices.filter { d in
+            !HostStore.shared.hosts.contains { $0.address.lowercased() == d.address.lowercased() }
+        }
+        alert.messageText = "Found \(devices.count) JetKVM\(devices.count == 1 ? "" : "s") (\(fresh.count) new)"
+        let lines = devices.map { "\($0.address)\($0.isSetup ? "" : "  (not set up)")" }
+            .joined(separator: "\n")
+        guard !fresh.isEmpty else {
+            alert.informativeText = "\(lines)\n\nAll of them are in the host list already."
+            alert.runModal()
+            return
+        }
+        alert.informativeText = """
+            \(lines)
+
+            One password for every new device. A device that is not set up \
+            yet is set up with this password on first connect.
+            """
+        let pass = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        pass.placeholderString = "JetKVM password"
+        alert.accessoryView = pass
+        alert.window.initialFirstResponder = pass
+        alert.addButton(withTitle: "Add \(fresh.count)")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        for d in fresh {
+            var h = Host(name: "", address: d.address, user: "")
+            h.type = "jetkvm"
+            PasswordStore.save(host: d.address, user: "", password: pass.stringValue)
+            HostStore.shared.upsert(h)
+        }
+    }
+
     func console(for host: Host) -> ConsoleWindowController? {
         consoles.first { $0.host.id == host.id }
     }
@@ -156,6 +209,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                          keyEquivalent: "0")
         fileMenu.addItem(withTitle: "Add Host…", action: #selector(addHost(_:)),
                          keyEquivalent: "n")
+        fileMenu.addItem(withTitle: "Discover JetKVMs", action: #selector(discoverJetKVMs(_:)),
+                         keyEquivalent: "d")
         fileMenu.addItem(withTitle: "Web API…", action: #selector(showAPIInfo(_:)), keyEquivalent: "")
         fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)),
                          keyEquivalent: "w")

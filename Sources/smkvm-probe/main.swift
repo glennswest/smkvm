@@ -5,6 +5,7 @@
 //               [--no-keepalive] [--mouse-info-len N] [--power on|off|reset|softoff]
 //               [--vnc PORT]   (standard VNC server instead of ATEN iKVM)
 //               [--jetkvm]     (JetKVM WebRTC console; user is unused)
+//   smkvm-probe --discover [a.b.c]   (sweep local /24s, or a.b.c.0/24, for JetKVMs)
 //               [--tap-hid HEX] (tap one key, as a USB HID usage, 2 s after the first frame; e.g. e1 = Shift)
 //
 // The password comes from $SMKVM_PASSWORD or the app's password file
@@ -42,6 +43,17 @@ default: nil
 let savePeriod = Double(option("--save-every") ?? "0") ?? 0
 let vncPort = option("--vnc").flatMap(Int.init)
 let jetkvm = flag("--jetkvm")
+
+if flag("--discover") {
+    let subnets = args.first.map {
+        [$0.split(separator: "/")[0].split(separator: ".").prefix(3).joined(separator: ".")]
+    }
+    FileHandle.standardError.write(Data("scanning \(subnets?.joined(separator: ", ") ?? "local subnets")…\n".utf8))
+    for d in JetKVMDiscovery.scan(subnets: subnets) {
+        print("\(d.address)\t\(d.isSetup ? "set up" : "NOT SET UP")")
+    }
+    exit(0)
+}
 let tapKey = option("--tap-hid").flatMap { UInt8($0.replacingOccurrences(of: "0x", with: ""), radix: 16) }
 guard let host = args.first else {
     FileHandle.standardError.write(Data("usage: smkvm-probe <bmc> [user] [--seconds N] [--png file]\n".utf8))

@@ -56,8 +56,27 @@ final class APIController {
         let parts = req.path.split(separator: "/").map(String.init)   // ["api", "hosts", name, action, …]
         guard parts.first == "api" else { respond(.error("not found", status: 404)); return }
         if parts.count == 1 { respond(.json(Self.reference)); return }
+        if parts[1] == "discover" {
+            // Infrastructure-free fleet discovery: sweep the local /24s
+            // (or ?subnet=a.b.c) for JetKVMs.
+            let subnets = req.query["subnet"].map { [Self.subnetPrefix($0)] }
+            let known = Set(HostStore.shared.hosts.map { $0.address.lowercased() })
+            DispatchQueue.global(qos: .userInitiated).async {
+                let devices = JetKVMDiscovery.scan(subnets: subnets)
+                respond(.json(devices.map {
+                    ["address": $0.address, "isSetup": $0.isSetup,
+                     "known": known.contains($0.address.lowercased())] as [String: Any]
+                }))
+            }
+            return
+        }
         guard parts[1] == "hosts" else { respond(.error("not found", status: 404)); return }
-        if parts.count == 2 { respond(.json(hostList())); return }
+        if parts.count == 2 {
+            // POST /api/hosts adds or updates a host — the fleet path: a
+            // script can sync tens of JetKVMs/BMCs from an inventory.
+            if req.method == "POST" { respond(upsertHost(req)); return }
+            respond(.json(hostList())); return
+        }
 
         guard let host = findHost(parts[2]) else {
             respond(.error("no host '\(parts[2])' (see GET /api/hosts)", status: 404)); return
@@ -68,6 +87,11 @@ final class APIController {
         switch (req.method, action) {
         case ("GET", ""), ("GET", "status"):
             respond(.json(describe(host, console)))
+        case ("DELETE", ""):
+            console?.close()
+            HostStore.shared.remove(host.id)
+            PasswordStore.remove(host: host.address, user: host.user)
+            respond(.json(["removed": host.title]))
         case ("POST", "connect"):
             respond(.json(describe(host, app?.openConsole(host))))
         case ("POST", "disconnect"):
@@ -221,6 +245,38 @@ final class APIController {
 
     // MARK: hosts
 
+    /// "a.b.c", "a.b.c.d" or "a.b.c.0/24" → the "a.b.c" prefix the scanner takes.
+    nonisolated private static func subnetPrefix(_ s: String) -> String {
+        s.split(separator: "/")[0].split(separator: ".").prefix(3).joined(separator: ".")
+    }
+
+    /// POST /api/hosts — add or update (matched by address). Fleet path:
+    /// one call per device syncs tens of JetKVMs/BMCs from an inventory.
+    private func upsertHost(_ req: HTTPRequest) -> HTTPResponse {
+        let b = req.json
+        guard let address = (b["address"] as? String)?.trimmingCharacters(in: .whitespaces),
+              !address.isEmpty else {
+            return .error("need {\"address\": …, \"type\": \"aten|vnc|jetkvm\", \"name\"?, " +
+                          "\"user\"?, \"password\"?, \"vncPort\"?, \"logScreens\"?}")
+        }
+        let existing = HostStore.shared.hosts.first { $0.address.lowercased() == address.lowercased() }
+        let type = b["type"] as? String ?? existing?.type ?? "aten"
+        guard ["aten", "vnc", "jetkvm"].contains(type) else {
+            return .error("type must be aten, vnc or jetkvm")
+        }
+        var host = existing ?? Host(name: "", address: address, user: type == "jetkvm" ? "" : "ADMIN")
+        host.type = type
+        if let v = b["name"] as? String { host.name = v }
+        if type == "jetkvm" { host.user = "" } else if let v = b["user"] as? String { host.user = v }
+        if let v = b["vncPort"] as? NSNumber { host.vncPort = v.intValue }
+        if let v = b["logScreens"] as? Bool { host.logScreens = v }
+        if let pw = b["password"] as? String {
+            PasswordStore.save(host: host.address, user: host.user, password: pw)
+        }
+        HostStore.shared.upsert(host)
+        return .json(describe(host, app?.console(for: host)))
+    }
+
     private func findHost(_ key: String) -> Host? {
         let k = key.lowercased()
         return HostStore.shared.hosts.first {
@@ -233,8 +289,12 @@ final class APIController {
     }
 
     private func describe(_ h: Host, _ c: ConsoleWindowController?) -> [String: Any] {
-        var d: [String: Any] = ["name": h.title, "address": h.address,
-                                "console": h.type == "vnc" ? "vnc:\(h.vncPort)" : "supermicro",
+        let console = switch h.type {
+        case "vnc": "vnc:\(h.vncPort)"
+        case "jetkvm": "jetkvm"
+        default: "supermicro"
+        }
+        var d: [String: Any] = ["name": h.title, "address": h.address, "console": console,
                                 "logScreens": h.logScreens, "open": c != nil]
         if let c {
             let (seq, f) = c.client.currentFrame
@@ -276,7 +336,10 @@ final class APIController {
         "auth": "Authorization: Bearer <token>, or ?token=<token>",
         "endpoints": [
             "GET  /api/hosts": "all hosts with console state",
+            "POST /api/hosts": "add/update a host: {address, type: aten|vnc|jetkvm, name?, user?, password?, vncPort?, logScreens?}",
+            "GET  /api/discover": "sweep local /24s (or ?subnet=a.b.c) for JetKVMs: [{address, isSetup, known}]",
             "GET  /api/hosts/{h}": "one host: open, status, seq, width, height",
+            "DELETE /api/hosts/{h}": "remove the host (and its saved password)",
             "POST /api/hosts/{h}/connect": "open the console (a tab in the app)",
             "POST /api/hosts/{h}/disconnect": "close the console",
             "GET  /api/hosts/{h}/screen.png": "current screen; ?wait_change=S waits up to S s for a visible change; ?after=SEQ returns once past SEQ",

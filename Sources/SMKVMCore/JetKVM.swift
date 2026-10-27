@@ -153,39 +153,75 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
         urlSession.invalidateAndCancel()
     }
 
-    // MARK: HTTP login
+    // MARK: HTTP login / first-time setup
 
-    /// POST /auth/login-local → authToken cookie. An empty password means
-    /// the device runs in noPassword mode: no login, no cookie.
+    /// Logs in (POST /auth/login-local → authToken cookie). A device that
+    /// has never been set up (GET /device/status isSetup=false) is set up
+    /// first, local-password mode, with this host's password — so adding a
+    /// factory-fresh JetKVM to the app just works. An empty password means
+    /// noPassword mode: no login, no cookie.
     private func login() throws -> String? {
+        if let status = try? request(path: "/device/status", method: "GET", body: nil),
+           status.code == 200,
+           let obj = try? JSONSerialization.jsonObject(with: status.body) as? [String: Any],
+           obj["isSetup"] as? Bool == false {
+            guard !password.isEmpty else {
+                throw JetKVMError.loginFailed(
+                    "device has never been set up — give this host a password and SMKVM will set it up")
+            }
+            onStatus("setting up device")
+            log?("device not set up; performing first-time setup (local password mode)")
+            let r = try request(path: "/device/setup", method: "POST",
+                                body: ["localAuthMode": "password", "password": password])
+            guard r.code == 200 else {
+                throw JetKVMError.loginFailed("setup failed: HTTP \(r.code) \(r.text.prefix(120))")
+            }
+            // Setup answers with the authToken cookie, like a login.
+            if let token = r.authToken { return token }
+        }
+
         guard !password.isEmpty else { return nil }
-        guard let url = URL(string: "http://\(host)/auth/login-local") else {
+        let r = try request(path: "/auth/login-local", method: "POST",
+                            body: ["password": password])
+        guard r.code == 200 else {
+            throw JetKVMError.loginFailed("HTTP \(r.code) \(r.text.prefix(120))")
+        }
+        guard let token = r.authToken else {
+            throw JetKVMError.loginFailed("no authToken cookie in response")
+        }
+        return token
+    }
+
+    private struct HTTPResult {
+        let code: Int
+        let body: Data
+        let authToken: String?
+        var text: String { String(decoding: body, as: UTF8.self) }
+    }
+
+    /// One synchronous JSON request to the device.
+    private func request(path: String, method: String, body: [String: Any]?) throws -> HTTPResult {
+        guard let url = URL(string: "http://\(host)\(path)") else {
             throw JetKVMError.loginFailed("bad address \(host)")
         }
         var req = URLRequest(url: url, timeoutInterval: 10)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: ["password": password])
-
+        req.httpMethod = method
+        if let body {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
         let sem = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var result: (Data?, URLResponse?, Error?) = (nil, nil, nil)
         urlSession.dataTask(with: req) { d, r, e in result = (d, r, e); sem.signal() }.resume()
         sem.wait()
-
-        if let e = result.2 { throw JetKVMError.signaling("\(e.localizedDescription)") }
+        if let e = result.2 { throw JetKVMError.signaling(e.localizedDescription) }
         guard let http = result.1 as? HTTPURLResponse else {
             throw JetKVMError.signaling("no HTTP response")
         }
-        guard http.statusCode == 200 else {
-            let body = result.0.map { String(decoding: $0, as: UTF8.self) } ?? ""
-            throw JetKVMError.loginFailed("HTTP \(http.statusCode) \(body.prefix(120))")
-        }
         let fields = (http.allHeaderFields as? [String: String]) ?? [:]
-        let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
-        guard let token = cookies.first(where: { $0.name == "authToken" })?.value else {
-            throw JetKVMError.loginFailed("no authToken cookie in response")
-        }
-        return token
+        let token = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+            .first(where: { $0.name == "authToken" })?.value
+        return HTTPResult(code: http.statusCode, body: result.0 ?? Data(), authToken: token)
     }
 
     // MARK: signaling
