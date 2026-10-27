@@ -16,6 +16,7 @@ APP=$OUT/SMKVM.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SMKVM"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 # Embed the WebRTC framework (JetKVM console): the binary references it as
 # @rpath/WebRTC.framework and its build rpath points into .build/.
 FRAMEWORK=$(find .build/artifacts -maxdepth 6 -type d -path '*macos*/WebRTC.framework' | head -1)
@@ -32,6 +33,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>SMKVM</string>
   <key>CFBundleIdentifier</key><string>io.github.glennswest.smkvm</string>
   <key>CFBundleExecutable</key><string>SMKVM</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>

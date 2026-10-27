@@ -3,6 +3,15 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v1.2.0] — 2026-10-27
+
+### Added
+- **App icon** — graphite rounded square with a console screen, phosphor
+  prompt and BMC status LEDs; drawn programmatically by
+  `scripts/make-icon.swift` (regenerate with
+  `swift scripts/make-icon.swift` + `iconutil`), shipped as
+  `Resources/AppIcon.icns` and embedded by `scripts/bundle.sh`.
+
 ## [v1.1.2] — 2026-10-27
 
 ### Fixed
