@@ -3,8 +3,48 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-09-30
-- **build:** `scripts/release.sh` builds the downloadable app: universal (arm64 + x86_64), ad-hoc signed, zipped without extended attributes, with a SHA-256 checksum. `scripts/bundle.sh` gains `SMKVM_UNIVERSAL` and `SMKVM_OUT`.
+## [v1.1.0] — 2026-10-27
+
+### Added
+- **JetKVM console support** — a third console type beside ATEN and VNC,
+  speaking the device's native WebRTC console: local-auth login, WebSocket
+  signaling (base64 JSON SDP offer/answer, trickle ICE), H.264 video via
+  libwebrtc (stasel/WebRTC 154.0.0, VideoToolbox) painted into the shared
+  Framebuffer — ConsoleView, ScreenLogger and the web API work unchanged.
+  Input as JSON-RPC over the `rpc` data channel (`keyboardReport`,
+  `absMouseReport` 0–32767, `wheelReport`); Power menu drives
+  `setATXPowerAction` (needs the ATX extension); HDMI input state surfaces
+  as "no video: no signal". Live-verified on firmware 0.5.9:
+  1920×1080@60, ~57 fps delivered, input accepted. (docs/jetkvm.md)
+- **First-time device setup in the connect path** — a JetKVM reporting
+  `isSetup: false` is set up in local-password mode with the host's
+  password, then logged into; factory-fresh devices just work.
+- **JetKVM discovery with no infrastructure** — `JetKVMDiscovery` sweeps
+  the local /24s (HTTP fingerprint of `/device/status`; the device offers
+  no DNS-SD service to browse): **Connection → Discover JetKVMs** (⌘D)
+  adds all new devices with one shared password; `smkvm-probe --discover
+  [a.b.c]`; `GET /api/discover?subnet=a.b.c`.
+- **Fleet web API** — `POST /api/hosts` (add/update a host, password into
+  the password store) and `DELETE /api/hosts/{h}`, so tens of devices
+  sync from a script; host `console` field now reports `jetkvm`.
+- **Probe** — `--jetkvm` mode for the headless live test.
+
+### Changed
+- **Tests migrated from XCTest to swift-testing** — `swift test` now runs
+  with the Command Line Tools alone (XCTest ships only inside Xcode); all
+  37 tests pass.
+- **`scripts/bundle.sh` embeds WebRTC.framework** in SMKVM.app (Contents/
+  Frameworks + rpath), signing it with the app's identity.
+
+### Fixed
+- **JetKVM frames decoded but never rendered** — the remote RTCVideoTrack
+  wrapper must be retained; its dealloc detaches the renderer adapters.
+
+### Build
+- `scripts/release.sh` builds the downloadable app: universal
+  (arm64 + x86_64), ad-hoc signed, zipped without extended attributes,
+  with a SHA-256 checksum. `scripts/bundle.sh` gains `SMKVM_UNIVERSAL`
+  and `SMKVM_OUT`. (2026-09-30)
 
 ## [v1.0.0] — 2026-09-30
 

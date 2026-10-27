@@ -13,9 +13,13 @@ This is a macOS app, so — unlike the Linux projects — it is built and tested
 
 ```
 swift build            # debug
-swift test
-scripts/bundle.sh      # release build → build/SMKVM.app
+swift test             # swift-testing — Command Line Tools are enough, no Xcode
+scripts/bundle.sh      # release build → build/SMKVM.app (embeds WebRTC.framework)
 ```
+
+Tests are swift-testing, not XCTest, deliberately: XCTest.framework ships
+only inside Xcode.app and this project must build and test with the CLT
+alone. Don't add XCTest-based tests back.
 
 ## Passwords and signing
 
@@ -30,12 +34,16 @@ identity (or `SMKVM_SIGN_IDENTITY`), falling back to ad-hoc.
 ## Version
 
 Single source: `VERSION` (also stamped into the app's Info.plist by
-`scripts/bundle.sh`). Current: 1.0.0.
+`scripts/bundle.sh`). Current: 1.1.0.
 
 ## Layout
 
 - `Sources/SMKVMCore` — protocol: BMC HTTP login/session key, RFB/ATEN
   handshake, message parsing, video decoders, key mapping. No UI.
+  `JetKVM.swift` (WebRTC session: login/setup, signaling, video →
+  Framebuffer, JSON-RPC input; see docs/jetkvm.md) and
+  `JetKVMDiscovery.swift` (subnet sweep) live here; the WebRTC stack is
+  the stasel/WebRTC binary package, pinned exact in Package.swift.
 - `Sources/SMKVM` — AppKit app: host library (HostStore/HostsWindow/HostEditor),
   tabbed console windows (ConsoleWindowController/ConsoleView).
 - `Sources/SMKVMCore/PasswordStore.swift` — password file (shared with the probe).
@@ -46,8 +54,9 @@ Single source: `VERSION` (also stamped into the app's Info.plist by
 ## Test lab
 
 Verified against 8 × Supermicro X9 boards (WPCM450 BMC, ATEN firmware
-"(c) 2010", RFB 003.008 on 5900, security type 16) and 1 × Dell PowerEdge
-R230 (iDRAC8 2.86, Enterprise, built-in VNC server on 5901). Lab addresses,
+"(c) 2010", RFB 003.008 on 5900, security type 16), 1 × Dell PowerEdge
+R230 (iDRAC8 2.86, Enterprise, built-in VNC server on 5901) and 1 × JetKVM
+(firmware 0.5.9: setup, login, 1080p60 video, input). Lab addresses,
 credentials and the API-token distribution are kept outside this repo (the
 repo is public) — never commit them.
 
@@ -81,26 +90,17 @@ repo is public) — never commit them.
 
 ## Next
 
-- [ ] **JetKVM support** (IN PROGRESS 2026-10-27) — third console type
-      `jetkvm`: local-auth login (`POST /auth/login-local` → authToken
-      cookie), WebRTC signaling over `GET /webrtc/signaling/client`
-      (offer/answer as base64 JSON SDP + trickle ICE), H.264 video track
-      decoded into the existing Framebuffer/FrameSnapshot pipeline (so
-      ConsoleView, ScreenLogger and the web API work unchanged), input as
-      JSON-RPC over the `rpc` data channel (`keyboardReport`,
-      `absMouseReport` 0–32767, `wheelReport`), power via
-      `setATXPowerAction` (needs the ATX extension). WebRTC stack:
-      stasel/WebRTC (packaged libwebrtc) pinned at 154.0.0;
-      `scripts/bundle.sh` embeds the framework. Probe gains a jetkvm mode
-      for the headless live test. Steps:
-      - [ ] Package.swift: WebRTC dependency
-      - [ ] SMKVMCore: JetKVMWeb (login + signaling WS) + JetKVMSession
-            (peer connection, renderer → Framebuffer, input RPC)
-      - [ ] KVMClient: `.jetkvm` ConsoleKind (connect loop, input routing)
-      - [ ] Host model + HostEditor third type (no user field)
-      - [ ] bundle.sh framework embed
-      - [ ] smkvm-probe `--jetkvm` headless live test, verified on-device
-      - [ ] docs/jetkvm.md + README; v1.1.0
+- [x] **JetKVM support** (2026-10-27, v1.1.0) — third console type
+      `jetkvm` on the device's WebRTC console; in-app first-time setup;
+      infrastructure-free subnet discovery (⌘D / `--discover` /
+      `GET /api/discover`); fleet API (`POST /api/hosts`, `DELETE`);
+      probe `--jetkvm`; bundle embeds WebRTC.framework; docs/jetkvm.md.
+      Live-verified end to end on firmware 0.5.9 (1080p60, ~57 fps
+      delivered, input accepted). GUI console not yet exercised by hand —
+      the engine is the probe-verified path. Known nits: first frame can
+      take a few seconds (device keyframe cadence); wheel direction on
+      real hardware unconfirmed; `no video` state only affects the status
+      line.
 - [ ] Settle remaining UNVERIFIED protocol items (docs/protocol.md): 0x37
   length (2 vs 3, `--mouse-info-len`), wheel encoding (buttons bits 3/4),
   mouse on ATEN.

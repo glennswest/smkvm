@@ -7,7 +7,9 @@ Older Supermicro boards (X8/X9/X10) only offer a Java Web Start KVM viewer
 that barely runs on a modern Mac. SMKVM talks to the BMC directly: it logs
 into the BMC's web UI, fetches the one-time KVM session key the Java
 launcher would have used, and speaks ATEN's modified VNC protocol itself.
-Dell iDRAC8 is supported through the iDRAC's built-in VNC server.
+Dell iDRAC8 is supported through the iDRAC's built-in VNC server, and
+[JetKVM](https://jetkvm.com) devices through their native WebRTC console —
+no browser, no JetKVM Cloud, no Tailscale.
 
 It also serves a small token-protected web API, so a script or an AI agent
 on another machine can watch a console and type into it.
@@ -18,6 +20,11 @@ on another machine can watch a console and type into it.
   video for both BMC families (see below), keyboard and mouse.
 - **Dell iDRAC8** (and other standard VNC servers) — VNC password auth,
   Raw / CopyRect / Hextile, power via Redfish.
+- **JetKVM** — the device's WebRTC console natively: H.264 video, keyboard
+  and mouse over its RPC channel, ATX power actions. A factory-fresh
+  device is set up automatically on first connect, and **Discover
+  JetKVMs** (⌘D) sweeps the local subnets — no mDNS or DNS infrastructure
+  needed. Fleets of them are added over the web API.
 - **Many hosts** — a saved host list; each console opens as a native
   window tab. Reconnects automatically with a fresh session key.
 - **Keys a Mac lacks** — Ctrl-Alt-Del, Print Screen, Scroll Lock, Pause,
@@ -37,6 +44,7 @@ on another machine can watch a console and type into it.
 | Nuvoton WPCM450 ("Hermon"), ATEN firmware | Supermicro X8, most X9 | supported, verified |
 | ASPEED AST2100/2300/2400, ATEN firmware | Supermicro X10 | supported, tested on synthetic data only |
 | Dell iDRAC8 Enterprise (built-in VNC server) | PowerEdge 13G, e.g. R230 | supported, verified |
+| JetKVM (WebRTC console) | any machine with HDMI + USB | supported, verified (firmware 0.5.9) |
 
 Not supported yet: later X9 firmware with **KVM SSL** enabled (the KVM
 port is wrapped in TLS) — turn KVM SSL off in the BMC web UI. Newer
@@ -83,6 +91,24 @@ user and password, so keep the VNC password equal to the login password.
 The iDRAC takes several seconds to accept a VNC session and allows one at a
 time.
 
+### JetKVM
+
+Add the host with **Console: JetKVM** and the device's password — there is
+no user name. A device fresh out of the box (never set up) is set up by
+SMKVM on first connect, in local-password mode with that password; leave
+JetKVM Cloud and the Tailscale extension off. **Connection → Discover
+JetKVMs** (⌘D) sweeps the local /24s and offers to add everything it finds,
+one shared password for all. The console shows `no video: no signal` when
+the device's HDMI input is dark. The Power menu drives the optional ATX
+extension board (short press, 5 s hold, reset); without the extension the
+actions are accepted but do nothing. The device allows one console at a
+time: opening its web UI takes the session over, and SMKVM says so instead
+of fighting for it.
+
+For a fleet, script the web API (see below): `GET /api/discover` sweeps a
+subnet, `POST /api/hosts` adds each device, and the first `connect` sets a
+fresh device up.
+
 ## Web API
 
 While the app runs it serves an HTTP API and a browser page on port 8765
@@ -117,7 +143,10 @@ xattr -dr com.apple.quarantine /Applications/SMKVM.app
 
 ## Build
 
-Requires macOS 14+ and Xcode / Swift 6.
+Requires macOS 14+ and Swift 6 — the Command Line Tools are enough (the
+tests use swift-testing, which ships in the toolchain; Xcode is not
+needed). The first build downloads the WebRTC framework (packaged Google
+libwebrtc) as a Swift package dependency.
 
 ```
 swift build
@@ -135,6 +164,8 @@ ad-hoc. `scripts/release.sh` builds the universal, ad-hoc-signed release zip.
 ```
 SMKVM_PASSWORD=… swift run smkvm-probe <bmc> ADMIN --seconds 15 --png out.png
 swift run smkvm-probe <idrac> root --vnc 5901 --png out.png
+SMKVM_PASSWORD=… swift run smkvm-probe <jetkvm> --jetkvm --png out.png
+swift run smkvm-probe --discover            # sweep local /24s for JetKVMs
 ```
 
 The password comes from `$SMKVM_PASSWORD` or the app's password file. The
@@ -147,6 +178,9 @@ probe prints the handshake and protocol log and saves frames
 implemented: the web login and JNLP session key, the security-type-16
 handshake, ATEN's message set, the Hermon (WPCM450) tile format and the
 AST2100 DCT/VQ codec, plus results from real hardware.
+[`docs/jetkvm.md`](docs/jetkvm.md) does the same for the JetKVM: auth and
+first-time setup, the WebSocket signaling, the WebRTC session, the HID RPC
+and the discovery sweep.
 
 ## Acknowledgements
 

@@ -32,7 +32,10 @@ curl -H "Authorization: Bearer $SMKVM_API" http://<mac>:8765/api/hosts
 |---|---|---|---|
 | GET | `/api` | | this reference as JSON |
 | GET | `/api/hosts` | | all hosts: name, address, console type, open, status, seq, size |
+| POST | `/api/hosts` | `{"address": …, "type": "aten\|vnc\|jetkvm", "name"?, "user"?, "password"?, "vncPort"?, "logScreens"?}` | adds, or updates the host with that address |
+| GET | `/api/discover` | `subnet=a.b.c` (default: every local /24) | sweeps for JetKVMs: `[{address, isSetup, known}]` |
 | GET | `/api/hosts/{h}` | | one host |
+| DELETE | `/api/hosts/{h}` | | removes the host and its saved password |
 | POST | `/api/hosts/{h}/connect` | | opens the console tab |
 | POST | `/api/hosts/{h}/disconnect` | | closes it |
 | GET | `/api/hosts/{h}/screen.png` | `wait_change=S`, `after=SEQ` | current screen as PNG |
@@ -47,6 +50,21 @@ curl -H "Authorization: Bearer $SMKVM_API" http://<mac>:8765/api/hosts
 | GET | `/api/hosts/{h}/screens/{date}/{file}` | | one logged screenshot |
 
 Input endpoints on a console that isn't open return **409**; `connect` first.
+
+### Onboarding a JetKVM fleet
+
+`discover` + `POST /api/hosts` + `connect` onboards every JetKVM on a
+subnet; a device that was never set up is set up (local-password mode, the
+given password) by that first connect:
+
+```sh
+curl -s -H "Authorization: Bearer $SMKVM_API" "http://<mac>:8765/api/discover?subnet=10.0.0" |
+  jq -r '.[] | select(.known == false) | .address' | while read ip; do
+    curl -s -H "Authorization: Bearer $SMKVM_API" -d "{\"address\":\"$ip\",\"type\":\"jetkvm\",\"password\":\"$JETKVM_PW\"}" \
+         "http://<mac>:8765/api/hosts"
+    curl -s -X POST -H "Authorization: Bearer $SMKVM_API" "http://<mac>:8765/api/hosts/$ip/connect"
+done
+```
 
 ### Waiting for the screen
 
