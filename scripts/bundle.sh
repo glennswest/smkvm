@@ -16,6 +16,13 @@ APP=$OUT/SMKVM.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SMKVM"
+# Embed the WebRTC framework (JetKVM console): the binary references it as
+# @rpath/WebRTC.framework and its build rpath points into .build/.
+FRAMEWORK=$(find .build/artifacts -maxdepth 6 -type d -path '*macos*/WebRTC.framework' | head -1)
+if [ -z "$FRAMEWORK" ]; then echo "WebRTC.framework not found under .build/artifacts" >&2; exit 1; fi
+mkdir -p "$APP/Contents/Frameworks"
+cp -R "$FRAMEWORK" "$APP/Contents/Frameworks/"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/SMKVM"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -42,10 +49,10 @@ PLIST
 # Override with SMKVM_SIGN_IDENTITY; falls back to ad-hoc if none exists.
 IDENTITY=${SMKVM_SIGN_IDENTITY:-$(security find-identity -v -p codesigning \
     | awk -F'"' '/Apple Development|Developer ID Application/ {print $2; exit}')}
-if [ -n "$IDENTITY" ]; then
-    codesign --force --sign "$IDENTITY" "$APP"
-else
+if [ -z "$IDENTITY" ]; then
     echo "warning: no signing identity; ad-hoc signing (Keychain will re-prompt after each build)" >&2
-    codesign --force --sign - "$APP"
+    IDENTITY=-
 fi
+codesign --force --sign "$IDENTITY" "$APP/Contents/Frameworks/WebRTC.framework"
+codesign --force --sign "$IDENTITY" "$APP"
 echo "built $APP ($VERSION)"
