@@ -3,6 +3,13 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-28
+- **perf(jetkvm):** mouse moves now ride the device's binary HID channel
+  (`hidrpc-unreliable-ordered`, TypePointerReport) with JSON-RPC as the
+  fallback, and move coalescing tightened to ~250 Hz; receive-side
+  jitter buffer measured at 0–2 ms (the device's zero playout-delay hint
+  is honored), logged in the inbound stats line.
+
 ## [v1.2.0] — 2026-10-27
 
 ### Added

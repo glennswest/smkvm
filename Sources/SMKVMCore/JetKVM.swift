@@ -91,6 +91,7 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
     private var factory: RTCPeerConnectionFactory?
     private var pc: RTCPeerConnection?
     private var rpc: RTCDataChannel?
+    private var hid: RTCDataChannel?   // binary pointer path (unreliable)
     private var renderer: JetKVMRenderer?
     // The track wrapper must stay alive: its dealloc detaches the renderer.
     private var videoTrack: RTCVideoTrack?
@@ -153,6 +154,7 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
         t?.cancel()
         ws?.cancel(with: .normalClosure, reason: nil)
         rpc?.close()
+        hid?.close()
         if let r = renderer { videoTrack?.remove(r) }
         videoTrack = nil
         pc?.close()
@@ -358,6 +360,18 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
         channel.delegate = self
         lock.lock(); rpc = channel; lock.unlock()
 
+        // Mouse moves ride a separate binary channel, like the device's own
+        // UI: ordered but unreliable (a lost move is superseded by the next
+        // one), no JSON to parse on the device, no head-of-line blocking
+        // behind the reliable rpc channel.
+        let hidConfig = RTCDataChannelConfiguration()
+        hidConfig.isOrdered = true
+        hidConfig.maxRetransmits = 0
+        if let h = connection.dataChannel(forLabel: "hidrpc-unreliable-ordered", configuration: hidConfig) {
+            h.delegate = self
+            lock.lock(); hid = h; lock.unlock()
+        }
+
         let recvOnly = { () -> RTCRtpTransceiverInit in
             let t = RTCRtpTransceiverInit()
             t.direction = .recvOnly
@@ -467,11 +481,16 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
                 let key = n("keyFramesDecoded")
                 let dropped = n("framesDropped")
                 let decoder = v["decoderImplementation"] as? String ?? "?"
+                // Average jitter-buffer dwell per frame — the latency the
+                // receiver adds on top of decode.
+                let jbDelay = (v["jitterBufferDelay"] as? NSNumber)?.doubleValue ?? 0
+                let jbCount = (v["jitterBufferEmittedCount"] as? NSNumber)?.doubleValue ?? 0
+                let jbMs = jbCount > 0 ? Int(jbDelay / jbCount * 1000) : 0
                 let codec = (v["codecId"] as? String).flatMap {
                     (report.statistics[$0]?.values["mimeType"]) as? String
                 } ?? "?"
                 self.log?("inbound video: \(codec) packets \(packets) framesDecoded \(frames) " +
-                          "key \(key) dropped \(dropped) decoder \(decoder)")
+                          "key \(key) dropped \(dropped) decoder \(decoder) jitterBuffer \(jbMs)ms")
             }
         }
     }
@@ -526,7 +545,7 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
     }
 
     /// x/y in framebuffer coordinates, buttons RFB-style without wheel bits.
-    /// Move-only reports are coalesced to ~125 Hz (macOS delivers mouseMoved
+    /// Move-only reports are coalesced to ~250 Hz (macOS delivers mouseMoved
     /// at the mouse's polling rate; flooding the device's HID queue lags the
     /// cursor); button changes always go out immediately, and a trailing
     /// flush lands the final position.
@@ -536,12 +555,12 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
         let hb = JetKVMInput.hidButtons(rfb: rfbButtons)
         let now = Date()
         lock.lock()
-        if hb == lastSentButtons && now.timeIntervalSince(lastMoveAt) < 0.008 {
+        if hb == lastSentButtons && now.timeIntervalSince(lastMoveAt) < 0.004 {
             let flushScheduled = pendingMove != nil
             pendingMove = (hx, hy, hb)
             lock.unlock()
             if !flushScheduled {
-                DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.01) { [weak self] in
+                DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.006) { [weak self] in
                     self?.flushPendingMove()
                 }
             }
@@ -551,7 +570,7 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
         lastMoveAt = now
         pendingMove = nil
         lock.unlock()
-        rpcCall("absMouseReport", params: ["x": hx, "y": hy, "buttons": Int(hb)])
+        sendPointer(hx, hy, hb)
     }
 
     private func flushPendingMove() {
@@ -561,7 +580,30 @@ final class JetKVMSession: NSObject, @unchecked Sendable {
         lastSentButtons = hb
         lastMoveAt = Date()
         lock.unlock()
-        rpcCall("absMouseReport", params: ["x": hx, "y": hy, "buttons": Int(hb)])
+        sendPointer(hx, hy, hb)
+    }
+
+    /// One absolute pointer report: the binary HID channel when it is open
+    /// (TypePointerReport 0x03: x/y as big-endian Int32, then buttons),
+    /// otherwise the JSON-RPC fallback.
+    private func sendPointer(_ x: Int, _ y: Int, _ buttons: UInt8) {
+        lock.lock()
+        let channel = hid
+        lock.unlock()
+        guard let channel, channel.readyState == .open else {
+            rpcCall("absMouseReport", params: ["x": x, "y": y, "buttons": Int(buttons)])
+            return
+        }
+        var d = Data(capacity: 10)
+        d.append(0x03)
+        for v in [Int32(x), Int32(y)] {
+            d.append(UInt8(truncatingIfNeeded: v >> 24))
+            d.append(UInt8(truncatingIfNeeded: v >> 16))
+            d.append(UInt8(truncatingIfNeeded: v >> 8))
+            d.append(UInt8(truncatingIfNeeded: v))
+        }
+        d.append(buttons)
+        channel.sendData(RTCDataBuffer(data: d, isBinary: true))
     }
 
     func sendWheel(_ wheelY: Int) {
@@ -729,6 +771,11 @@ extension JetKVMSession: RTCDataChannelDelegate {
     func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
         log?("data channel \(dataChannel.label) state \(dataChannel.readyState.rawValue)")
         guard dataChannel.readyState == .open else { return }
+        if dataChannel.label.hasPrefix("hidrpc") {
+            // HID RPC handshake: type 0x01, protocol version 0x01.
+            dataChannel.sendData(RTCDataBuffer(data: Data([0x01, 0x01]), isBinary: true))
+            return
+        }
         // Ask for the input state up front; with no HDMI signal there will
         // never be a frame, and the status should say why.
         let id = rpcCall("getVideoState", params: nil)
